@@ -9144,6 +9144,7 @@ function downloadPDF() {
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({unit:'mm', format:'a4'});
   const lr = window._lastResult; // declared early — referenced throughout downloadPDF
+  const pdfCreditStore = lr?.creditSnapshot || creditStore; // snapshot taken at compute time
   const W=210, M=16, CW=178;
   const today = new Date().toLocaleDateString('en-IE',{day:'numeric',month:'long',year:'numeric'});
 
@@ -9299,9 +9300,7 @@ function downloadPDF() {
 
   // ── Render one spouse's data ─────────────────────────────────────────
   // renderSpouseSection — uses pre-computed figures from _lastResult; no recalculation
-  // Use snapshot of creditStore captured at compute time — prevents live DOM mismatch
-  const pdfCreditStore = lr.creditSnapshot || creditStore;
-
+  // pdfCreditStore declared at top of function (after lr)
   const renderSpouseSection = (sp, prefix, nrCr, capRes, usc, prsi, prsiResult,
                                 paidIT, paidUSC, paidPRSI, paidCGT,
                                 grossITAmt, netITAmt, cgtData,
