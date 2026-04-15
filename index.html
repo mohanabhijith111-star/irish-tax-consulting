@@ -8500,8 +8500,7 @@ function buildSpouseProforma(o) {
   // Non-assessable spouse shows no credits; their net IT = proportional share of combined net IT.
   const isJoint = !!o._jointNote;
   const isAssessableSpouseCol = !isJoint || (o.prefix === assessableSpouse);
-  const _bsSnap = (window._lastResult?.creditSnapshot) || creditStore;
-  const creditArr=_bsSnap[o.prefix||'s1']||[];
+  const creditArr=creditStore[o.prefix||'s1']||[];
   const nrArr=creditArr.filter(c=>c.nr&&c.amount>0);
   let totalCreditsApplied = 0;
   if(isAssessableSpouseCol && (nrArr.length||sp.medRelief>0)){
@@ -8647,8 +8646,7 @@ function renderSingleResult(d) {
   const pswtCredit      = d.pswtCredit || 0;
   const sfpCredit       = d.sfpCredit || 0;
   const totalLiability  = d.netIT + d.usc.total + d.prsi + d.cgt.payable + dirtCharge;
-  const _snapS = window._lastResult?.creditSnapshot || creditStore;
-  const refCredits      = (_snapS['s1']||[]).filter(c=>!c.nr).reduce((s,c)=>s+c.amount,0);
+  const refCredits      = (creditStore['s1']||[]).filter(c=>!c.nr).reduce((s,c)=>s+c.amount,0);
   const netLiability    = Math.max(0, totalLiability - refCredits - dwtCredit - pswtCredit - sfpCredit);
   const totalPaid       = d.paidIT + d.paidUSC + d.paidPRSI + d.paidCGT + dirtAlreadyPaid;
   const priorRefund     = d.priorRefund || 0;
@@ -8823,9 +8821,8 @@ function renderJointResult(d) {
   if(highIT>0) rows+=Item('@ 40% on balance',highIT);
   rows+=Sub('Gross Income Tax',stdIT+highIT);
 
-  // Credits — use snapshot captured at compute time (avoids live/computed mismatch)
-  const _snap = window._lastResult?.creditSnapshot || creditStore;
-  const allCredits = [...(_snap['s1']||[]), ...(_snap['s2']||[])];
+  // Credits — read from live creditStore (proforma renders synchronously during compute)
+  const allCredits = [...(creditStore['s1']||[]), ...(creditStore['s2']||[])];
   const nrCredits  = allCredits.filter(c=>c.nr&&c.amount>0);
   const allCapRes  = {caps:Object.assign({}, (d.capS1||{}).caps, (d.capS2||{}).caps)};
   if(nrCredits.length || d.s1.medRelief>0 || d.s2.medRelief>0){
