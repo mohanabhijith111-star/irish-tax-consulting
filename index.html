@@ -3900,7 +3900,16 @@ function renderDeductionGroups(pfx) {
 
 function renderCreditGroupItem(pfx, item) {
   const {id, def, storeEntry} = item;
-  const unitRate = def.amounts[currentYear]??def.amounts[LATEST_YEAR]??0;
+  let unitRate = def.amounts[currentYear]??def.amounts[LATEST_YEAR]??0;
+  // For personal credits in joint assessment — show mode-correct amount per spouse
+  if(assessMode === 'joint' && (id === 'personal_married' || id === 'personal_single')) {
+    unitRate = (pfx === assessableSpouse) ? unitRate : 0;
+  } else if(assessMode === 'separate' && id === 'personal_married') {
+    const yr = R().credits;
+    unitRate = pfx === 's1' ? Math.floor(yr.personal.married/2) : Math.ceil(yr.personal.married/2);
+  } else if(assessMode === 'treatment' && id === 'personal_married') {
+    unitRate = R().credits.personal.single;
+  }
   const badgeCls = def.nr?'f11':'f12';
   const badgeLbl = def.nr?'Non-ref':'Refundable';
   if(!storeEntry) {
@@ -3987,10 +3996,24 @@ function addCreditById(pfx, id) {
   if(!def) return;
   if(!def.custom&&!def.perPerson&&creditStore[pfx].some(c=>(c.baseId||c.id)===id)) { showToast('Already added'); return; }
   const unitRate = getCreditCatalogueAmount(id);
+  // For personal credits in joint assessment — only assessable spouse gets the full credit
+  let amount = unitRate;
+  if(assessMode === 'joint') {
+    if(id === 'personal_married' || id === 'personal_single') {
+      amount = (pfx === assessableSpouse) ? unitRate : 0;
+    }
+  } else if(assessMode === 'separate') {
+    if(id === 'personal_married') {
+      const yr = R().credits;
+      amount = pfx === 's1' ? Math.floor(yr.personal.married/2) : Math.ceil(yr.personal.married/2);
+    }
+  } else if(assessMode === 'treatment') {
+    if(id === 'personal_married') amount = getCreditCatalogueAmount('personal_single');
+  }
   // Use stable counter-based ID for perPerson credits so capRes.caps lookup survives snapshot restore
   const existingCount = creditStore[pfx].filter(c => (c.baseId||c.id) === id).length;
   const storeId  = def.perPerson ? id+'_'+existingCount : id;
-  creditStore[pfx].push({id:storeId,baseId:id,label:def.label,note:def.note||'',amount:unitRate,unitRate,qty:def.perPerson?1:undefined,nr:def.nr,custom:!!def.custom,perPerson:!!def.perPerson,desc:''});
+  creditStore[pfx].push({id:storeId,baseId:id,label:def.label,note:def.note||'',amount,unitRate:amount,qty:def.perPerson?1:undefined,nr:def.nr,custom:!!def.custom,perPerson:!!def.perPerson,desc:''});
   refreshCreditGroups(pfx);
 }
 function addDeductionById(pfx, id) {
@@ -4041,14 +4064,27 @@ function addCreditFromPicker(pfx) {
   }
   const unitRate = getCreditCatalogueAmount(id);
   const qty = 1;
-  const amount = unitRate * qty;
+  // For personal credits in joint/separate — amount depends on assessment mode and which spouse
+  let amount = unitRate * qty;
+  if(assessMode === 'joint') {
+    if(id === 'personal_married' || id === 'personal_single') {
+      amount = (pfx === assessableSpouse) ? unitRate : 0;
+    }
+  } else if(assessMode === 'separate') {
+    if(id === 'personal_married') {
+      const yr = R().credits;
+      amount = pfx === 's1' ? Math.floor(yr.personal.married/2) : Math.ceil(yr.personal.married/2);
+    }
+  } else if(assessMode === 'treatment') {
+    if(id === 'personal_married') amount = getCreditCatalogueAmount('personal_single');
+  }
   // For perPerson credits, use unique id so multiple can coexist
   // Use stable counter-based ID for perPerson credits so capRes.caps lookup survives snapshot restore
   const existingCount = creditStore[pfx].filter(c => (c.baseId||c.id) === id).length;
   const storeId = def.perPerson ? id + '_' + existingCount : (def.custom ? id+'_'+Date.now() : id);
   creditStore[pfx].push({
     id: storeId, baseId: id, label: def.label, note: def.note||'',
-    amount, unitRate, qty: def.perPerson ? qty : undefined,
+    amount, unitRate: amount, qty: def.perPerson ? qty : undefined,
     nr: def.nr, custom: !!def.custom, perPerson: !!def.perPerson, desc: ''
   });
   sel.value = '';
