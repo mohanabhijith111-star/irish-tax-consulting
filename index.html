@@ -3901,7 +3901,7 @@ function renderDeductionGroups(pfx) {
 function renderCreditGroupItem(pfx, item) {
   const {id, def, storeEntry} = item;
   let unitRate = def.amounts[currentYear]??def.amounts[LATEST_YEAR]??0;
-  // For personal credits in joint assessment — show mode-correct amount per spouse
+  // For personal credits — compute mode-correct amount per spouse
   if(assessMode === 'joint' && (id === 'personal_married' || id === 'personal_single')) {
     unitRate = (pfx === assessableSpouse) ? unitRate : 0;
   } else if(assessMode === 'separate' && id === 'personal_married') {
@@ -3909,6 +3909,21 @@ function renderCreditGroupItem(pfx, item) {
     unitRate = pfx === 's1' ? Math.floor(yr.personal.married/2) : Math.ceil(yr.personal.married/2);
   } else if(assessMode === 'treatment' && id === 'personal_married') {
     unitRate = R().credits.personal.single;
+  }
+  // In joint assessment: non-assessable spouse gets €0 personal married credit.
+  // Show it as informational (not editable) rather than an editable €0 row.
+  const isNonAssessablePersonal = assessMode === 'joint' &&
+    (id === 'personal_married' || id === 'personal_single') &&
+    pfx !== assessableSpouse && storeEntry;
+  if(isNonAssessablePersonal) {
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-radius:3px;margin-bottom:4px;background:#f8f9fa;border:1px dashed var(--border2);opacity:0.7">
+      <div>
+        <span class="ft-badge f11" style="font-size:9px;padding:1px 5px;margin-right:5px">Non-ref</span>
+        <span style="font-size:12px;font-weight:600;color:var(--text2)">${def.label}</span>
+        <span class="credit-entry-sub">€0 — full credit (€${(def.amounts[currentYear]??0).toLocaleString()}) applies to the assessable spouse only (Joint Assessment)</span>
+      </div>
+      <span style="font-size:12px;font-weight:700;color:var(--text3);font-family:var(--mono)">€0</span>
+    </div>`;
   }
   const badgeCls = def.nr?'f11':'f12';
   const badgeLbl = def.nr?'Non-ref':'Refundable';
