@@ -530,6 +530,72 @@ input,select,button,textarea{font-family:inherit}
   background:none; border:none;
 }
 .credit-entry-remove:hover { color:#c00; background:#fff0f0; }
+/* ── In-line Relief Calculators ── */
+.calc-wrap {
+  border:1px solid var(--border2); border-radius:4px; margin-bottom:6px; background:var(--surface);
+}
+.calc-row {
+  display:grid; grid-template-columns:1fr auto auto auto; align-items:center; gap:0;
+}
+.calc-row.deduction-cols { grid-template-columns:1fr auto auto; }
+.calc-toggle-btn {
+  padding:6px 10px; background:none; border:none; border-left:1px solid var(--border2);
+  cursor:pointer; font-size:13px; color:var(--accent2); line-height:1;
+  transition:background 0.15s;
+}
+.calc-toggle-btn:hover { background:var(--accent-lt); color:var(--accent); }
+.calc-toggle-btn.active { background:var(--accent-lt); color:var(--accent); }
+.calc-expander {
+  display:none; border-top:1px solid var(--accent-lt);
+  background:linear-gradient(180deg,#f0f5ff 0%,var(--surface) 100%);
+  padding:12px 14px; border-radius:0 0 4px 4px;
+}
+.calc-expander.open { display:block; }
+.calc-expander-title {
+  font-size:10px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase;
+  color:var(--accent); margin-bottom:10px; display:flex; align-items:center; gap:6px;
+}
+.calc-grid {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:8px; margin-bottom:10px;
+}
+.calc-field label {
+  display:block; font-size:10px; font-weight:700; color:var(--text2);
+  letter-spacing:0.04em; text-transform:uppercase; margin-bottom:3px;
+}
+.calc-field input, .calc-field select {
+  width:100%; border:1px solid var(--border); border-radius:3px; padding:6px 8px;
+  font-size:12px; outline:none; background:var(--surface);
+}
+.calc-field input:focus, .calc-field select:focus { border-color:var(--accent2); background:#fff; }
+.calc-field .prefix-wrap { display:flex; align-items:center; }
+.calc-field .prefix-wrap span { padding:6px 6px; font-size:12px; color:var(--text3); border:1px solid var(--border); border-right:none; border-radius:3px 0 0 3px; background:var(--surface2); }
+.calc-field .prefix-wrap input { border-radius:0 3px 3px 0; }
+.calc-result {
+  background:#f0fdf4; border:1px solid #86efac; border-radius:4px;
+  padding:10px 12px; margin-bottom:10px;
+}
+.calc-result-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:3px; }
+.calc-result-label { font-size:11px; color:var(--text2); }
+.calc-result-value { font-size:14px; font-weight:700; font-family:var(--mono); color:#15803d; }
+.calc-result-sub { font-size:10px; color:var(--text3); margin-top:4px; }
+.calc-result.warning { background:#fffaed; border-color:#f0c060; }
+.calc-result.warning .calc-result-value { color:#7a5500; }
+.calc-note { font-size:10px; color:var(--text3); margin-bottom:8px; padding:6px 8px; background:var(--surface2); border-radius:3px; border-left:2px solid var(--accent2); }
+.calc-apply-btn {
+  background:var(--accent); color:#fff; border:none; border-radius:4px;
+  padding:7px 18px; font-size:12px; font-weight:700; cursor:pointer; float:right;
+}
+.calc-apply-btn:hover { background:var(--accent2); }
+.calc-apply-btn:disabled { background:var(--text3); cursor:not-allowed; }
+.calc-comparison { display:flex; gap:8px; margin-bottom:10px; }
+.calc-comparison-card {
+  flex:1; border:1px solid var(--border2); border-radius:4px; padding:8px 10px; text-align:center;
+}
+.calc-comparison-card.best { border-color:#86efac; background:#f0fdf4; }
+.calc-comparison-card-label { font-size:9px; font-weight:700; color:var(--text3); text-transform:uppercase; letter-spacing:0.05em; }
+.calc-comparison-card-val { font-size:15px; font-weight:700; font-family:var(--mono); color:var(--accent); margin:2px 0; }
+.calc-comparison-card.best .calc-comparison-card-val { color:#15803d; }
+.calc-comparison-card-sub { font-size:9px; color:var(--text3); }
 .credit-floor-warning {
   display:none; background:#fff8e6; border:1px solid #f0c060; border-radius:4px;
   padding:8px 12px; font-size:11px; color:#7a5500; margin-top:6px;
@@ -3976,11 +4042,11 @@ function renderCreditList(pfx) {
     const badgeCls = c.nr ? 'f11' : 'f12';
     const badgeLbl = c.nr ? 'Non-ref' : 'Refundable';
     const unitRate = c.unitRate || getCreditCatalogueAmount(c.baseId||c.id.replace(/_\d+$/,''));
-    const maxAmt   = c.perPerson ? unitRate : unitRate; // per-person: max per unit
-    const overLimit = !c.perPerson && maxAmt > 0 && c.amount > maxAmt;
+    const overLimit = !c.perPerson && unitRate > 0 && c.amount > unitRate;
     const qty = c.qty || 1;
+    const baseId = c.baseId || c.id.replace(/_\d+$/,'');
+    const hasCalc = CALC_REGISTRY[baseId] != null;
 
-    // Per-person qty UI
     const qtyUI = c.perPerson ? `
       <div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2)">
         <span>×</span>
@@ -3991,49 +4057,68 @@ function renderCreditList(pfx) {
         <span style="color:var(--text3)">${unitRate>0?'@ '+euro(unitRate)+' each':''}</span>
       </div>` : '';
 
+    const calcBtn = hasCalc
+      ? `<button class="calc-toggle-btn" id="calc-btn-${pfx}-${c.id}" onclick="toggleCalcExpander('${pfx}','${c.id}','${baseId}')" title="Open calculator">🧮</button>`
+      : '';
+
     return `
-    <div class="credit-entry" id="ce-${pfx}-${c.id}" style="${c.perPerson?'grid-template-columns:1fr auto auto auto auto':''}">
-      <div class="credit-entry-label">
-        <span class="ft-badge ${badgeCls}" style="font-size:9px;padding:1px 5px;margin-right:5px">${badgeLbl}</span>
-        ${c.custom ? `<input type="text" value="${c.desc||c.label}"
-          style="border:none;background:none;font-size:12px;font-weight:600;color:var(--text);width:200px;outline:none"
-          onchange="updateCreditDesc('${pfx}','${c.id}',this.value)"/>` : c.label}
-        ${c.note ? `<span class="credit-entry-sub">${c.note}</span>` : ''}
+    <div class="calc-wrap" id="cw-${pfx}-${c.id}">
+      <div class="credit-entry calc-row${c.perPerson?' grid-template-columns:1fr auto auto auto auto auto':''}" style="border:none;margin:0;border-radius:${hasCalc?'4px 4px 0 0':'4px'}">
+        <div class="credit-entry-label">
+          <span class="ft-badge ${badgeCls}" style="font-size:9px;padding:1px 5px;margin-right:5px">${badgeLbl}</span>
+          ${c.custom ? `<input type="text" value="${c.desc||c.label}"
+            style="border:none;background:none;font-size:12px;font-weight:600;color:var(--text);width:200px;outline:none"
+            onchange="updateCreditDesc('${pfx}','${c.id}',this.value)"/>` : c.label}
+          ${c.note ? `<span class="credit-entry-sub">${c.note}</span>` : ''}
+        </div>
+        ${qtyUI}
+        <div class="credit-entry-max">${unitRate > 0 && !c.perPerson ? 'max ' + euro(unitRate) : ''}</div>
+        <div class="credit-entry-input">
+          €<input type="number" value="${c.amount}" min="0" step="1"
+            class="${overLimit ? 'over-limit' : ''}"
+            ${c.perPerson ? 'title="Auto-calculated: unit rate × quantity (edit to override)"' : ''}
+            oninput="updateCreditAmount('${pfx}','${c.id}',this.value)" onchange="this.className='';refreshCreditGroups('${pfx}')"
+            title="${overLimit ? 'Exceeds Revenue maximum for this credit' : ''}"/>
+        </div>
+        ${calcBtn}
+        <button class="credit-entry-remove" onclick="removeCredit('${pfx}','${c.id}')" title="Remove">✕</button>
       </div>
-      ${qtyUI}
-      <div class="credit-entry-max">${unitRate > 0 && !c.perPerson ? 'max ' + euro(unitRate) : ''}</div>
-      <div class="credit-entry-input">
-        €<input type="number" value="${c.amount}" min="0" step="1"
-          class="${overLimit ? 'over-limit' : ''}"
-          ${c.perPerson ? 'title="Auto-calculated: unit rate × quantity (edit to override)"' : ''}
-          oninput="updateCreditAmount('${pfx}','${c.id}',this.value)" onchange="this.className='';refreshCreditGroups('${pfx}')"
-          title="${overLimit ? 'Exceeds Revenue maximum for this credit' : ''}"/>
-      </div>
-      <button class="credit-entry-remove" onclick="removeCredit('${pfx}','${c.id}')" title="Remove">✕</button>
+      <div class="calc-expander" id="calc-${pfx}-${c.id}"></div>
     </div>`;
   }).join('');
 }
 
 function renderDeductionList(pfx) {
   if(!deductionStore[pfx].length) return `<div style="color:var(--text3);font-size:12px;padding:8px 0">No deductions added yet. Use the dropdown above to add deductions.</div>`;
-  return deductionStore[pfx].map(d => `
-    <div class="deduction-entry" id="de-${pfx}-${d.id}">
-      <div class="deduction-entry-label">
-        ${d.custom ? `<input type="text" value="${d.desc||d.label}"
-          style="border:none;background:none;font-size:12px;font-weight:600;color:var(--text);width:200px;outline:none"
-          onchange="updateDeductionDesc('${pfx}','${d.id}',this.value)"/>` : d.label}
-        ${d.note ? `<span class="credit-entry-sub">${d.note}</span>` : ''}
-        ${d.perDay ? `<span class="credit-entry-sub">€3.20/day × <input type="number" min="0" step="1"
-          style="width:55px;border:1px solid var(--border);border-radius:2px;padding:2px 4px;font-size:11px"
-          oninput="updateDeductionDays('${pfx}','${d.id}',this.value)"/> days</span>` : ''}
+  return deductionStore[pfx].map(d => {
+    const baseId = d.baseId || d.id;
+    const hasCalc = CALC_REGISTRY[baseId] != null;
+    const calcBtn = hasCalc
+      ? `<button class="calc-toggle-btn" id="calc-btn-${pfx}-${d.id}" onclick="toggleCalcExpander('${pfx}','${d.id}','${baseId}')" title="Open calculator">🧮</button>`
+      : '';
+    return `
+    <div class="calc-wrap" id="dw-${pfx}-${d.id}">
+      <div class="deduction-entry calc-row deduction-cols" style="border:none;margin:0;border-radius:${hasCalc?'4px 4px 0 0':'4px'}">
+        <div class="deduction-entry-label">
+          ${d.custom ? `<input type="text" value="${d.desc||d.label}"
+            style="border:none;background:none;font-size:12px;font-weight:600;color:var(--text);width:200px;outline:none"
+            onchange="updateDeductionDesc('${pfx}','${d.id}',this.value)"/>` : d.label}
+          ${d.note ? `<span class="credit-entry-sub">${d.note}</span>` : ''}
+          ${d.perDay ? `<span class="credit-entry-sub">€3.20/day × <input type="number" min="0" step="1"
+            style="width:55px;border:1px solid var(--border);border-radius:2px;padding:2px 4px;font-size:11px"
+            oninput="updateDeductionDays('${pfx}','${d.id}',this.value)"/> days</span>` : ''}
+        </div>
+        <div class="deduction-entry-input">
+          €<input type="number" value="${d.amount}" min="0" step="1"
+            ${d.perDay ? 'readonly style="background:var(--surface2)"' : ''}
+            oninput="updateDeductionAmount('${pfx}','${d.id}',this.value)"/>
+        </div>
+        ${calcBtn}
+        <button class="credit-entry-remove" onclick="removeDeduction('${pfx}','${d.id}')" title="Remove">✕</button>
       </div>
-      <div class="deduction-entry-input">
-        €<input type="number" value="${d.amount}" min="0" step="1"
-          ${d.perDay ? 'readonly style="background:var(--surface2)"' : ''}
-          oninput="updateDeductionAmount('${pfx}','${d.id}',this.value)"/>
-      </div>
-      <button class="credit-entry-remove" onclick="removeDeduction('${pfx}','${d.id}')" title="Remove">✕</button>
-    </div>`).join('');
+      <div class="calc-expander" id="calc-${pfx}-${d.id}"></div>
+    </div>`;
+  }).join('');
 }
 
 function updateDeductionDays(pfx, id, days) {
@@ -7265,6 +7350,476 @@ function calcMedRelief(prefix) {
       preview.style.display = 'none';
     }
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// IN-LINE RELIEF CALCULATORS
+// Registry maps baseId → builder function. Each builder returns HTML for the
+// calc-expander panel. Apply button calls applyCalcResult(pfx, id, amount).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Flat-rate expense schedule (Revenue approved 2024/2025)
+const FLAT_RATE_SCHEDULE = [
+  {label:'Carpenter / Joiner',               amount:184},
+  {label:'Dentist (employed)',                amount:376},
+  {label:'Doctor (employed, not GP)',         amount:376},
+  {label:'Engineer (employed)',               amount:376},
+  {label:'Farmer (employed)',                 amount:254},
+  {label:'Journalist / Reporter',             amount:317},
+  {label:'Nurse — General',                   amount:733},
+  {label:'Nurse — Theatre',                   amount:1,   note:'Claim actual cost of theatre shoes/clogs'},
+  {label:'Physiotherapist (employed)',        amount:376},
+  {label:'Plumber',                           amount:184},
+  {label:'Pilot / Flight Crew',               amount:1,   note:'Claim actual cost of uniforms'},
+  {label:'Radiographer',                      amount:376},
+  {label:'Teacher — Primary/Secondary',       amount:518},
+  {label:'Teacher — Third Level',             amount:518},
+  {label:'Veterinary Surgeon (employed)',      amount:376},
+  {label:'Other occupation (enter amount)',    amount:0,   custom:true},
+];
+
+// Build calc HTML for a given baseId
+function buildCalcHTML(pfx, storeId, baseId) {
+  const yr = currentYear;
+  const isLeap = yr % 4 === 0 && (yr % 100 !== 0 || yr % 400 === 0);
+  const daysInYear = isLeap ? 366 : 365;
+
+  const h = (label, content) => `
+    <div class="calc-expander-title">🧮 ${label}</div>
+    ${content}`;
+
+  const field = (label, id, type='number', extra='') =>
+    `<div class="calc-field"><label>${label}</label>
+     <div class="prefix-wrap">${type==='euro'?'<span>€</span>':type==='pct'?'<span>%</span>':''}
+     <input type="${type==='euro'||type==='pct'?'number':'text'}" id="${id}" placeholder="0" min="0" step="${type==='pct'?'0.01':'1'}" ${extra} oninput="runCalc('${pfx}','${storeId}','${baseId}')"/>
+     </div></div>`;
+
+  const sel = (label, id, opts) =>
+    `<div class="calc-field"><label>${label}</label>
+     <select id="${id}" onchange="runCalc('${pfx}','${storeId}','${baseId}')">
+       ${opts.map(o=>typeof o==='string'?`<option value="${o}">${o}</option>`:`<option value="${o.v}">${o.l}</option>`).join('')}
+     </select></div>`;
+
+  const note = (t) => `<div class="calc-note">${t}</div>`;
+  const result = `<div class="calc-result" id="calc-result-${pfx}-${storeId}"><div class="calc-result-row"><span class="calc-result-label">Result</span><span class="calc-result-value" id="calc-rv-${pfx}-${storeId}">—</span></div><div class="calc-result-sub" id="calc-rs-${pfx}-${storeId}"></div></div>`;
+  const apply = `<div style="overflow:hidden;margin-top:8px"><button class="calc-apply-btn" id="calc-apply-${pfx}-${storeId}" onclick="applyCalcResult('${pfx}','${storeId}')" disabled>✔ Apply to Return</button></div>`;
+
+  // ── WFH ─────────────────────────────────────────────────────────────────
+  if(baseId === 'wfh') return h('Remote Working Relief Calculator', `
+    ${note('Revenue formula: (Utilities × WFH days ÷ ' + daysInYear + ' − Employer contribution) × 30%. Or flat rate: €3.20 × WFH days. Tool shows both — apply whichever is higher.')}
+    <div class="calc-grid">
+      ${field('Annual Electricity & Gas (€)', `cw-${pfx}-${storeId}-elec`, 'euro')}
+      ${field('Annual Broadband (€)', `cw-${pfx}-${storeId}-bb`, 'euro')}
+      ${field('WFH Days in ' + yr, `cw-${pfx}-${storeId}-days`)}
+      ${field('Employer WFH Allowance Paid (€)', `cw-${pfx}-${storeId}-emp`, 'euro')}
+      ${sel('Marginal Tax Rate', `cw-${pfx}-${storeId}-rate`, [{v:'0.40',l:'40% — Higher Rate'},{v:'0.20',l:'20% — Standard Rate'}])}
+    </div>
+    <div class="calc-comparison" id="cw-comp-${pfx}-${storeId}">
+      <div class="calc-comparison-card" id="cw-flat-${pfx}-${storeId}">
+        <div class="calc-comparison-card-label">Flat Rate</div>
+        <div class="calc-comparison-card-val">—</div>
+        <div class="calc-comparison-card-sub">€3.20 × days</div>
+      </div>
+      <div class="calc-comparison-card" id="cw-actual-${pfx}-${storeId}">
+        <div class="calc-comparison-card-label">Actual Cost Method</div>
+        <div class="calc-comparison-card-val">—</div>
+        <div class="calc-comparison-card-sub">30% of utilities × days÷${daysInYear}</div>
+      </div>
+    </div>
+    ${result}${apply}`);
+
+  // ── FLAT RATE ────────────────────────────────────────────────────────────
+  if(baseId === 'flatrate') return h('Flat-Rate Employment Expenses', `
+    ${note('Revenue-approved flat-rate expense schedules. Select your occupation to see the approved annual deduction amount.')}
+    <div class="calc-grid" style="grid-template-columns:1fr">
+      <div class="calc-field"><label>Occupation</label>
+        <select id="fr-occ-${pfx}-${storeId}" onchange="runCalc('${pfx}','${storeId}','${baseId}')">
+          <option value="">— Select occupation —</option>
+          ${FLAT_RATE_SCHEDULE.map((o,i)=>`<option value="${i}">${o.label}${o.amount>0&&!o.custom?' — €'+o.amount:''}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div id="fr-custom-${pfx}-${storeId}" style="display:none" class="calc-grid">
+      ${field('Custom Amount (€)', `fr-amt-${pfx}-${storeId}`, 'euro')}
+    </div>
+    <div id="fr-note-${pfx}-${storeId}" style="font-size:11px;color:var(--text3);margin-bottom:8px"></div>
+    ${result}${apply}`);
+
+  // ── EARNED INCOME CREDIT ─────────────────────────────────────────────────
+  if(baseId === 'earnedIncome') return h('Earned Income Tax Credit Calculator', `
+    ${note('Credit = lesser of Revenue max (€${getCreditCatalogueAmount("earnedIncome").toLocaleString()}) or 20% of net relevant earnings. Combined PAYE + EIC cannot exceed PAYE credit max.')}
+    <div class="calc-grid">
+      ${field('Net Relevant Earnings (€)', `ei-nre-${pfx}-${storeId}`, 'euro')}
+      ${field('PAYE Credit Already Applied (€)', `ei-paye-${pfx}-${storeId}`, 'euro')}
+    </div>
+    ${result}${apply}`);
+
+  // ── HOME CARER ───────────────────────────────────────────────────────────
+  if(baseId === 'homeCarer') return h("Home Carer's Tax Credit Calculator", `
+    ${note('Full credit (€' + (R().credits.homeCarer||1950).toLocaleString() + ') if carer income ≤ €7,200. Reduces by €1 per €2 above €7,200. Nil credit if carer income ≥ €11,100.')}
+    <div class="calc-grid">
+      ${field("Carer's Own Income (€) — if any", `hc-inc-${pfx}-${storeId}`, 'euro')}
+    </div>
+    ${result}${apply}`);
+
+  // ── DEPENDENT RELATIVE ───────────────────────────────────────────────────
+  if(baseId === 'depRelative') return h('Dependent Relative Credit Checker', `
+    ${note('Credit (€' + (R().credits.depRelative||305).toLocaleString() + ' per relative) is nil if relative\'s income exceeds the annual income limit (€' + (R().credits.depRelativeLimit||18028).toLocaleString() + ' for ' + yr + ').')}
+    <div class="calc-grid">
+      ${field('Number of Qualifying Relatives', `dr-qty-${pfx}-${storeId}`)}
+      ${field("Relative's Annual Income (€) — highest", `dr-inc-${pfx}-${storeId}`, 'euro')}
+    </div>
+    ${result}${apply}`);
+
+  // ── RENT TAX CREDIT ──────────────────────────────────────────────────────
+  if(baseId === 'rent' || baseId === 'rent_married') {
+    const max = baseId === 'rent_married' ? (R().credits.rent?.married||2000) : (R().credits.rent?.single||1000);
+    return h('Rent Tax Credit Calculator', `
+    ${note('Max €' + max.toLocaleString() + ' (' + yr + '). Tenant must have a valid tenancy registered with RTB. LPT compliance required for landlord. Claim via myAccount / Form 12.')}
+    <div class="calc-grid">
+      ${field('Annual Rent Paid (€)', `rent-paid-${pfx}-${storeId}`, 'euro')}
+      ${sel('Tax Year of Tenancy', `rent-yr-${pfx}-${storeId}`, [{v:yr,l:String(yr)},{v:yr-1,l:String(yr-1)},{v:yr-2,l:String(yr-2)},{v:yr-3,l:String(yr-3)}])}
+      ${sel('RTB Registered?', `rent-rtb-${pfx}-${storeId}`, [{v:'yes',l:'Yes — registered'},{v:'no',l:'No — not registered'}])}
+    </div>
+    ${result}${apply}`);
+  }
+
+  // ── MORTGAGE INTEREST ────────────────────────────────────────────────────
+  if(baseId === 'mortgage') return h('Mortgage Interest Tax Credit Calculator', `
+    ${note('Relief on increase in mortgage interest paid vs 2022 baseline. Max €' + (R().credits.mortgage||1250).toLocaleString() + '. Outstanding balance must be between €80,000–€500,000 on 31 Dec 2022.')}
+    <div class="calc-grid">
+      ${field('Mortgage Interest Paid in ' + yr + ' (€)', `mi-curr-${pfx}-${storeId}`, 'euro')}
+      ${field('Mortgage Interest Paid in 2022 (baseline) (€)', `mi-base-${pfx}-${storeId}`, 'euro')}
+      ${field('Qualifying Balance on 31 Dec 2022 (€)', `mi-bal-${pfx}-${storeId}`, 'euro')}
+    </div>
+    ${result}${apply}`);
+
+  // ── PENSION ──────────────────────────────────────────────────────────────
+  if(baseId === 'pension_ee' || baseId === 'pension_se') {
+    const ageBands = [{max:29,pct:15},{max:39,pct:20},{max:49,pct:25},{max:54,pct:30},{max:59,pct:35},{max:999,pct:40}];
+    const bandRows = ageBands.map(b=>`<tr><td style="padding:2px 8px;font-size:11px">${b.max===999?'60+':'Under '+( b.max+1)}</td><td style="padding:2px 8px;font-size:11px;font-weight:700;color:var(--accent)">${b.pct}%</td></tr>`).join('');
+    return h('Pension Contribution Relief Calculator', `
+    ${note('Relief at marginal rate. Age-based % cap on Net Relevant Earnings. Earnings cap: €115,000.')}
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div class="calc-grid" style="grid-template-columns:1fr 1fr">
+          ${field('Age', `pen-age-${pfx}-${storeId}`)}
+          ${field('Net Relevant Earnings (€)', `pen-nre-${pfx}-${storeId}`, 'euro')}
+          ${field('Gross Contribution (€)', `pen-cont-${pfx}-${storeId}`, 'euro')}
+          ${sel('Marginal Rate', `pen-rate-${pfx}-${storeId}`, [{v:'0.40',l:'40%'},{v:'0.20',l:'20%'}])}
+        </div>
+      </div>
+      <div style="flex:0 0 auto">
+        <table style="border-collapse:collapse;background:var(--surface2);border-radius:4px;overflow:hidden">
+          <tr style="background:var(--accent-lt)"><th style="padding:4px 8px;font-size:10px;color:var(--accent)">Age</th><th style="padding:4px 8px;font-size:10px;color:var(--accent)">Max %</th></tr>
+          ${bandRows}
+        </table>
+      </div>
+    </div>
+    ${result}${apply}`);
+  }
+
+  // ── CAPITAL ALLOWANCES ───────────────────────────────────────────────────
+  if(baseId === 'capallow') return h('Capital Allowances Calculator', `
+    ${note('12.5% straight-line (8 years). For energy-efficient equipment Revenue may allow 100% in year 1. Enter cost of each asset — tool calculates annual allowance.')}
+    <div id="ca-rows-${pfx}-${storeId}"></div>
+    <button onclick="addCARow('${pfx}','${storeId}')" style="font-size:11px;border:1px dashed var(--border2);background:none;padding:4px 12px;border-radius:3px;cursor:pointer;color:var(--accent);margin-bottom:8px">+ Add Asset</button>
+    ${result}${apply}`);
+
+  // ── RENTAL EXPENSES ──────────────────────────────────────────────────────
+  if(baseId === 'rent_exp') return h('Rental Expenses Breakdown', `
+    ${note('Allowable expenses: mortgage interest (100% from 2024, 80% in 2023), management fees, insurance, repairs & maintenance, RTSO where applicable.')}
+    <div class="calc-grid">
+      ${field('Mortgage Interest Paid (€)', `re-int-${pfx}-${storeId}`, 'euro')}
+      ${field('Management / Agent Fees (€)', `re-mgmt-${pfx}-${storeId}`, 'euro')}
+      ${field('Insurance (€)', `re-ins-${pfx}-${storeId}`, 'euro')}
+      ${field('Repairs & Maintenance (€)', `re-rep-${pfx}-${storeId}`, 'euro')}
+      ${field('Other Allowable Expenses (€)', `re-oth-${pfx}-${storeId}`, 'euro')}
+      ${sel('Tax Year (for interest %)', `re-yr-${pfx}-${storeId}`, SUPPORTED_YEARS.map(y=>({v:y,l:String(y)})))}
+    </div>
+    ${result}${apply}`);
+
+  return `<div class="calc-note">No calculator available for this item.</div>`;
+}
+
+// ── Capital allowance row helper ─────────────────────────────────────────
+let caRowCounter = {};
+function addCARow(pfx, storeId) {
+  const key = pfx+'-'+storeId;
+  caRowCounter[key] = (caRowCounter[key]||0) + 1;
+  const n = caRowCounter[key];
+  const container = document.getElementById(`ca-rows-${pfx}-${storeId}`);
+  if(!container) return;
+  const row = document.createElement('div');
+  row.id = `ca-row-${key}-${n}`;
+  row.className = 'calc-grid';
+  row.style.marginBottom = '6px';
+  row.innerHTML = `
+    <div class="calc-field"><label>Asset Description</label>
+      <input type="text" id="ca-desc-${key}-${n}" placeholder="e.g. Laptop" oninput="runCalc('${pfx}','${storeId}','capallow')"/>
+    </div>
+    <div class="calc-field"><label>Cost (€)</label>
+      <div class="prefix-wrap"><span>€</span>
+      <input type="number" id="ca-cost-${key}-${n}" placeholder="0" min="0" step="1" oninput="runCalc('${pfx}','${storeId}','capallow')"/>
+      </div>
+    </div>
+    <div class="calc-field"><label>Prior Years Used</label>
+      <input type="number" id="ca-used-${key}-${n}" placeholder="0" min="0" max="8" step="1" oninput="runCalc('${pfx}','${storeId}','capallow')"/>
+    </div>
+    <div class="calc-field" style="align-self:end">
+      <button onclick="this.closest('[id^=ca-row]').remove();runCalc('${pfx}','${storeId}','capallow')" 
+        style="border:1px solid var(--danger);color:var(--danger);background:none;border-radius:3px;padding:6px 10px;cursor:pointer;font-size:12px">✕</button>
+    </div>`;
+  container.appendChild(row);
+  runCalc(pfx, storeId, 'capallow');
+}
+
+// ── Toggle expander ──────────────────────────────────────────────────────
+function toggleCalcExpander(pfx, storeId, baseId) {
+  const panel = document.getElementById(`calc-${pfx}-${storeId}`);
+  const btn   = document.getElementById(`calc-btn-${pfx}-${storeId}`);
+  if(!panel) return;
+  if(panel.classList.contains('open')) {
+    panel.classList.remove('open');
+    if(btn) btn.classList.remove('active');
+  } else {
+    if(!panel.innerHTML.trim()) {
+      panel.innerHTML = buildCalcHTML(pfx, storeId, baseId);
+      // Auto-add first CA row
+      if(baseId === 'capallow') addCARow(pfx, storeId);
+    }
+    panel.classList.add('open');
+    if(btn) btn.classList.add('active');
+    runCalc(pfx, storeId, baseId);
+  }
+}
+
+// ── Apply result to store ────────────────────────────────────────────────
+function applyCalcResult(pfx, storeId) {
+  const btn = document.getElementById(`calc-apply-${pfx}-${storeId}`);
+  if(!btn || btn.disabled) return;
+  const val = parseFloat(btn.dataset.amount)||0;
+  // Is it a credit or deduction?
+  const credit = creditStore[pfx]?.find(c=>c.id===storeId);
+  const ded    = deductionStore[pfx]?.find(d=>d.id===storeId);
+  if(credit) {
+    credit.amount = val;
+    refreshCreditList(pfx);
+    refreshCreditGroups(pfx);
+  } else if(ded) {
+    ded.amount = val;
+    refreshDeductionList(pfx);
+    refreshDeductionGroups(pfx);
+  }
+  // Re-open expander after refresh
+  setTimeout(()=>{ toggleCalcExpander(pfx, storeId, btn.dataset.baseId); toggleCalcExpander(pfx, storeId, btn.dataset.baseId); }, 50);
+}
+
+// ── Main calc engine ─────────────────────────────────────────────────────
+function runCalc(pfx, storeId, baseId) {
+  const yr = currentYear;
+  const isLeap = yr % 4 === 0 && (yr % 100 !== 0 || yr % 400 === 0);
+  const daysInYear = isLeap ? 366 : 365;
+  const r = R();
+  const g = id => { const el=document.getElementById(id); return el ? (parseFloat(el.value)||0) : 0; };
+  const gs = id => { const el=document.getElementById(id); return el ? el.value : ''; };
+  const resultEl = document.getElementById(`calc-result-${pfx}-${storeId}`);
+  const rvEl     = document.getElementById(`calc-rv-${pfx}-${storeId}`);
+  const rsEl     = document.getElementById(`calc-rs-${pfx}-${storeId}`);
+  const applyBtn = document.getElementById(`calc-apply-${pfx}-${storeId}`);
+  if(!resultEl || !rvEl || !applyBtn) return;
+
+  let amount = 0, sub = '', warn = false;
+
+  // WFH
+  if(baseId === 'wfh') {
+    const elec = g(`cw-${pfx}-${storeId}-elec`);
+    const bb   = g(`cw-${pfx}-${storeId}-bb`);
+    const days = g(`cw-${pfx}-${storeId}-days`);
+    const emp  = g(`cw-${pfx}-${storeId}-emp`);
+    const rate = parseFloat(gs(`cw-${pfx}-${storeId}-rate`))||0.20;
+    const totalUtils = elec + bb;
+    const flatAmt  = Math.round(days * 3.20);
+    const actualAmt = Math.max(0, Math.round(((totalUtils * days / daysInYear) - emp) * 0.30));
+    const flatEl   = document.getElementById(`cw-flat-${pfx}-${storeId}`);
+    const actualEl = document.getElementById(`cw-actual-${pfx}-${storeId}`);
+    if(flatEl)   { flatEl.querySelector('.calc-comparison-card-val').textContent   = `€${flatAmt.toLocaleString()}`; flatEl.classList.toggle('best', flatAmt >= actualAmt); }
+    if(actualEl) { actualEl.querySelector('.calc-comparison-card-val').textContent = `€${actualAmt.toLocaleString()}`; actualEl.classList.toggle('best', actualAmt > flatAmt); }
+    amount = Math.max(flatAmt, actualAmt);
+    const method = flatAmt >= actualAmt ? 'flat rate (€3.20/day)' : 'actual cost method';
+    const relief = Math.round(amount * rate);
+    sub = `${days} days × method: ${method} → deduction €${amount.toLocaleString()} → tax relief €${relief.toLocaleString()} @ ${(rate*100).toFixed(0)}%`;
+  }
+
+  // FLAT RATE
+  else if(baseId === 'flatrate') {
+    const idx = parseInt(gs(`fr-occ-${pfx}-${storeId}`));
+    const occ = FLAT_RATE_SCHEDULE[idx];
+    const customAmt = g(`fr-amt-${pfx}-${storeId}`);
+    const noteEl = document.getElementById(`fr-note-${pfx}-${storeId}`);
+    const customDiv = document.getElementById(`fr-custom-${pfx}-${storeId}`);
+    if(!occ) { rvEl.textContent='—'; if(rsEl) rsEl.textContent='Select an occupation'; applyBtn.disabled=true; return; }
+    if(occ.custom) {
+      if(customDiv) customDiv.style.display='';
+      amount = customAmt;
+      sub = 'Custom amount entered';
+    } else {
+      if(customDiv) customDiv.style.display='none';
+      amount = occ.amount;
+      sub = occ.note || `Revenue approved flat-rate for ${occ.label}`;
+    }
+    if(noteEl) noteEl.textContent = occ.note || '';
+  }
+
+  // EARNED INCOME CREDIT
+  else if(baseId === 'earnedIncome') {
+    const nre    = Math.min(g(`ei-nre-${pfx}-${storeId}`), 115000);
+    const payeAp = g(`ei-paye-${pfx}-${storeId}`);
+    const revMax = getCreditCatalogueAmount('earnedIncome');
+    const payeMax= getCreditCatalogueAmount('paye');
+    const pctCap = Math.round(nre * 0.20);
+    let maxEIC   = Math.min(revMax, pctCap);
+    const combined = payeAp + maxEIC;
+    if(combined > payeMax) maxEIC = Math.max(0, payeMax - payeAp);
+    amount = maxEIC;
+    sub = `20% of NRE €${nre.toLocaleString()} = €${pctCap.toLocaleString()} | capped at €${revMax.toLocaleString()} | combined PAYE+EIC cap €${payeMax.toLocaleString()} → €${amount.toLocaleString()}`;
+  }
+
+  // HOME CARER
+  else if(baseId === 'homeCarer') {
+    const inc  = g(`hc-inc-${pfx}-${storeId}`);
+    const max  = r.credits.homeCarer || 1950;
+    if(inc <= 7200) {
+      amount = max;
+      sub = `Carer income €${inc.toLocaleString()} ≤ €7,200 — full credit applies`;
+    } else if(inc >= 11100) {
+      amount = 0; warn = true;
+      sub = `Carer income €${inc.toLocaleString()} ≥ €11,100 — credit is nil`;
+    } else {
+      const reduction = Math.floor((inc - 7200) / 2);
+      amount = Math.max(0, max - reduction);
+      sub = `Carer income €${inc.toLocaleString()} — reduction: €${reduction.toLocaleString()} → credit €${amount.toLocaleString()}`;
+    }
+  }
+
+  // DEPENDENT RELATIVE
+  else if(baseId === 'depRelative') {
+    const qty    = Math.max(1, Math.round(g(`dr-qty-${pfx}-${storeId}`) || 1));
+    const relInc = g(`dr-inc-${pfx}-${storeId}`);
+    const limit  = r.credits.depRelativeLimit || 18028;
+    const unit   = r.credits.depRelative || 305;
+    if(relInc > limit) {
+      amount = 0; warn = true;
+      sub = `Relative's income €${relInc.toLocaleString()} exceeds €${limit.toLocaleString()} limit — credit nil`;
+    } else {
+      amount = unit * qty;
+      sub = `${qty} qualifying relative${qty>1?'s':''} × €${unit.toLocaleString()} = €${amount.toLocaleString()} (relative income €${relInc.toLocaleString()} ≤ €${limit.toLocaleString()} ✓)`;
+    }
+  }
+
+  // RENT TAX CREDIT
+  else if(baseId === 'rent' || baseId === 'rent_married') {
+    const paid = g(`rent-paid-${pfx}-${storeId}`);
+    const rtb  = gs(`rent-rtb-${pfx}-${storeId}`);
+    const max  = baseId === 'rent_married' ? (r.credits.rent?.married||2000) : (r.credits.rent?.single||1000);
+    if(rtb === 'no') {
+      amount = 0; warn = true;
+      sub = 'Landlord must be RTB-registered to claim Rent Tax Credit';
+    } else {
+      amount = Math.min(paid * 0.20, max);
+      sub = `20% of €${paid.toLocaleString()} = €${Math.round(paid*0.20).toLocaleString()}, capped at €${max.toLocaleString()}`;
+    }
+  }
+
+  // MORTGAGE INTEREST
+  else if(baseId === 'mortgage') {
+    const curr = g(`mi-curr-${pfx}-${storeId}`);
+    const base = g(`mi-base-${pfx}-${storeId}`);
+    const bal  = g(`mi-bal-${pfx}-${storeId}`);
+    const max  = r.credits.mortgage || 1250;
+    if(bal < 80000 || bal > 500000) {
+      amount = 0; warn = true;
+      sub = `Outstanding balance (€${bal.toLocaleString()}) must be between €80,000–€500,000 on 31 Dec 2022`;
+    } else {
+      const increase = Math.max(0, curr - base);
+      amount = Math.min(Math.round(increase * 0.20), max);
+      sub = `Increase: €${curr.toLocaleString()} − €${base.toLocaleString()} = €${increase.toLocaleString()} × 20% = €${Math.round(increase*0.20).toLocaleString()}, capped at €${max.toLocaleString()}`;
+    }
+  }
+
+  // PENSION
+  else if(baseId === 'pension_ee' || baseId === 'pension_se') {
+    const age  = g(`pen-age-${pfx}-${storeId}`);
+    const nre  = Math.min(g(`pen-nre-${pfx}-${storeId}`), 115000);
+    const cont = g(`pen-cont-${pfx}-${storeId}`);
+    const rate = parseFloat(gs(`pen-rate-${pfx}-${storeId}`))||0.40;
+    const bands = [{max:29,pct:15},{max:39,pct:20},{max:49,pct:25},{max:54,pct:30},{max:59,pct:35},{max:999,pct:40}];
+    const band = bands.find(b=>age<=b.max) || bands[bands.length-1];
+    const maxCont = Math.round(nre * band.pct / 100);
+    const allowable = Math.min(cont, maxCont);
+    const relief = Math.round(allowable * rate);
+    amount = allowable;
+    const excess = cont > maxCont ? ` (€${(cont-maxCont).toLocaleString()} excess — carry forward)` : '';
+    sub = `Age ${age} → ${band.pct}% of €${nre.toLocaleString()} = max €${maxCont.toLocaleString()} | contribution €${cont.toLocaleString()}${excess} | relief €${relief.toLocaleString()} @ ${(rate*100).toFixed(0)}%`;
+  }
+
+  // CAPITAL ALLOWANCES
+  else if(baseId === 'capallow') {
+    const key = pfx+'-'+storeId;
+    const rows = document.querySelectorAll(`[id^="ca-row-${key}"]`);
+    let total = 0, parts = [];
+    rows.forEach(row => {
+      const n = row.id.replace(`ca-row-${key}-`,'');
+      const cost = g(`ca-cost-${key}-${n}`);
+      const used = Math.min(g(`ca-used-${key}-${n}`), 7);
+      const remaining = Math.max(0, 8 - used);
+      const annual = remaining > 0 ? Math.round(cost / 8) : 0;
+      const desc = document.getElementById(`ca-desc-${key}-${n}`)?.value || 'Asset';
+      if(cost > 0) { total += annual; parts.push(`${desc}: €${annual.toLocaleString()}/yr`); }
+    });
+    amount = total;
+    sub = parts.join(' | ') || 'Add assets above';
+  }
+
+  // RENTAL EXPENSES
+  else if(baseId === 'rent_exp') {
+    const taxYr = parseInt(gs(`re-yr-${pfx}-${storeId}`))||yr;
+    const intPct = taxYr >= 2024 ? 1.00 : taxYr === 2023 ? 0.80 : 0.75;
+    const interest = g(`re-int-${pfx}-${storeId}`);
+    const mgmt  = g(`re-mgmt-${pfx}-${storeId}`);
+    const ins   = g(`re-ins-${pfx}-${storeId}`);
+    const rep   = g(`re-rep-${pfx}-${storeId}`);
+    const oth   = g(`re-oth-${pfx}-${storeId}`);
+    const intAll = Math.round(interest * intPct);
+    amount = intAll + mgmt + ins + rep + oth;
+    sub = `Interest (${(intPct*100).toFixed(0)}%): €${intAll.toLocaleString()} + mgmt €${mgmt.toLocaleString()} + ins €${ins.toLocaleString()} + repairs €${rep.toLocaleString()} + other €${oth.toLocaleString()} = €${amount.toLocaleString()}`;
+  }
+
+  // Update UI
+  resultEl.className = `calc-result${warn?' warning':''}`;
+  rvEl.textContent = `€${amount.toLocaleString('en-IE',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  if(rsEl) rsEl.textContent = sub;
+  applyBtn.disabled = (amount === 0 && !warn);
+  applyBtn.dataset.amount = amount;
+  applyBtn.dataset.baseId = baseId;
+}
+
+// ── CALC_REGISTRY — which baseIds have calculators ───────────────────────
+const CALC_REGISTRY = {
+  wfh:1, flatrate:1, earnedIncome:1, homeCarer:1, depRelative:1,
+  rent:1, rent_married:1, mortgage:1,
+  pension_ee:1, pension_se:1, capallow:1, rent_exp:1,
+};
+
+function refreshDeductionList(pfx) {
+  const el = document.getElementById(`cd-deductions-list-${pfx}`);
+  if(el) el.innerHTML = renderDeductionList(pfx);
+}
+function refreshDeductionGroups(pfx) {
+  const el = document.getElementById(`cd-deductions-groups-${pfx}`);
+  if(el) el.innerHTML = renderDeductionGroups(pfx);
+  refreshDeductionList(pfx);
 }
 
 
