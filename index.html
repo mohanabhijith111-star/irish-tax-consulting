@@ -1375,11 +1375,7 @@ input,select,button,textarea{font-family:inherit}
         <div class="year-selector" style="margin:0">
           <label>Tax Year:</label>
           <select id="globalYear" onchange="onYearChange()">
-            <option value="2026">2026</option>
-            <option value="2025">2025</option>
-            <option value="2024" selected>2024</option>
-            <option value="2023">2023</option>
-            <option value="2022">2022</option>
+            <!-- Options populated dynamically from RATES object by initYearSelector() -->
           </select>
         </div>
         <button class="btn btn-secondary btn-sm" onclick="resetAll()">↺ Clear</button>
@@ -2019,7 +2015,7 @@ function restoreFormSnapshot(snap) {
         const baseId = c.baseId || c.id.replace(/_\d+$/, '');
         const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
         if(catEntry) {
-          const newUnitRate = catEntry.amounts[currentYear] ?? catEntry.amounts[2024] ?? 0;
+          const newUnitRate = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? 0;
           c.unitRate = newUnitRate;
           c.amount   = newUnitRate * (c.qty || 1);
         }
@@ -2681,7 +2677,7 @@ const RATES = {
     bands: { single:36800, spccc:40800, married1:45800, married2max:27800 },
     credits: { personal:{single:1700,married:3400,widowed_dep:1700,widowed_nodep:2240,bereavement:3400},
       paye:1700, earnedIncome:1700, spccc:1650, age:{single:245,married:490},
-      homeCarer:1600, incapChild:3300, depRelative:245, blind:{single:1650,both:3300},
+      homeCarer:1600, incapChild:3300, depRelative:245, depRelativeLimit:16156, blind:{single:1650,both:3300},
       rent:{single:500,married:1000}, mortgage:0, guideDog:825 },
     usc: [{cap:12012,rate:0.005},{cap:21295,rate:0.02},{cap:70044,rate:0.045},{cap:Infinity,rate:0.08}],
     prsi: { classA:0.04, classS:0.04, classK:0.04, classS_blended:0.04, weekly_exempt:352, weekly_credit_max:12, weekly_credit_hi:424, min_annual:500, unearned_threshold:5000 },
@@ -2690,7 +2686,7 @@ const RATES = {
     bands: { single:40000, spccc:44000, married1:49000, married2max:31000 },
     credits: { personal:{single:1775,married:3550,widowed_dep:1775,widowed_nodep:2315,bereavement:3550},
       paye:1775, earnedIncome:1775, spccc:1650, age:{single:245,married:490},
-      homeCarer:1700, incapChild:3300, depRelative:245, blind:{single:1650,both:3300},
+      homeCarer:1700, incapChild:3300, depRelative:245, depRelativeLimit:16780, blind:{single:1650,both:3300},
       rent:{single:500,married:1000}, mortgage:0, guideDog:825 },
     usc: [{cap:12012,rate:0.005},{cap:22920,rate:0.02},{cap:70044,rate:0.045},{cap:Infinity,rate:0.08}],
     prsi: { classA:0.04, classS:0.04, classK:0.04, classS_blended:0.04, weekly_exempt:352, weekly_credit_max:12, weekly_credit_hi:424, min_annual:500, unearned_threshold:5000 },
@@ -2699,7 +2695,7 @@ const RATES = {
     bands: { single:42000, spccc:46000, married1:51000, married2max:33000 },
     credits: { personal:{single:1875,married:3750,widowed_dep:1875,widowed_nodep:2415,bereavement:3750},
       paye:1875, earnedIncome:1875, spccc:1750, age:{single:245,married:490},
-      homeCarer:1800, incapChild:3500, depRelative:245, blind:{single:1650,both:3300},
+      homeCarer:1800, incapChild:3500, depRelative:245, depRelativeLimit:17404, blind:{single:1650,both:3300},
       rent:{single:1000,married:2000}, mortgage:1250, guideDog:825 },
     usc: [{cap:12012,rate:0.005},{cap:25760,rate:0.02},{cap:70044,rate:0.04},{cap:Infinity,rate:0.08}],
     prsi: { classA:0.041, classS:0.04025, classK:0.04025, classS_blended:0.04025, weekly_exempt:352, weekly_credit_max:12, weekly_credit_hi:424, min_annual:650, unearned_threshold:5000 },
@@ -2708,7 +2704,7 @@ const RATES = {
     bands: { single:44000, spccc:48000, married1:53000, married2max:35000 },
     credits: { personal:{single:2000,married:4000,widowed_dep:2000,widowed_nodep:2540,bereavement:4000},
       paye:2000, earnedIncome:2000, spccc:1900, age:{single:245,married:490},
-      homeCarer:1950, incapChild:3800, depRelative:305, blind:{single:1950,both:3900},
+      homeCarer:1950, incapChild:3800, depRelative:305, depRelativeLimit:18028, blind:{single:1950,both:3900},
       rent:{single:1000,married:2000}, mortgage:1250, guideDog:825 },
     usc: [{cap:12012,rate:0.005},{cap:27382,rate:0.02},{cap:70044,rate:0.03},{cap:Infinity,rate:0.08}],
     prsi: { classA:0.042, classS:0.04125, classK:0.04125, classS_blended:0.04125, weekly_exempt:352, weekly_credit_max:12, weekly_credit_hi:424, min_annual:650, unearned_threshold:5000 },
@@ -2717,7 +2713,7 @@ const RATES = {
     bands: { single:44000, spccc:48000, married1:53000, married2max:35000 },
     credits: { personal:{single:2000,married:4000,widowed_dep:2000,widowed_nodep:2540,bereavement:4000},
       paye:2000, earnedIncome:2000, spccc:1900, age:{single:245,married:490},
-      homeCarer:1950, incapChild:3800, depRelative:305, blind:{single:1950,both:3900},
+      homeCarer:1950, incapChild:3800, depRelative:305, depRelativeLimit:18028, blind:{single:1950,both:3900},
       rent:{single:1000,married:2000}, mortgage:1250, guideDog:825 },
     usc: [{cap:12012,rate:0.005},{cap:28700,rate:0.02},{cap:70044,rate:0.03},{cap:Infinity,rate:0.08}],
     prsi: { classA:0.042, classS:0.042375, classK:0.042375, classS_blended:0.042375, weekly_exempt:352, weekly_credit_max:12, weekly_credit_hi:424, min_annual:650, unearned_threshold:5000 },
@@ -2727,7 +2723,18 @@ const RATES = {
 // ═══════════════════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════════════════
-let currentYear = 2024;
+// ── Year constants derived from RATES (single source of truth) ──────────
+// SUPPORTED_YEARS: all years with rate data, sorted descending (newest first)
+const SUPPORTED_YEARS = Object.keys(RATES).map(Number).sort((a,b) => b-a);
+// LATEST_YEAR: the most recent year in the RATES table
+const LATEST_YEAR = SUPPORTED_YEARS[0];
+// DEFAULT_YEAR: current calendar year if supported, else latest available year
+// Irish income tax year = calendar year. The default is whichever year is in RATES.
+// To add a new year: just add it to RATES and CREDIT_CATALOGUE — everything else auto-updates.
+const _calYear = new Date().getFullYear();
+const DEFAULT_YEAR = SUPPORTED_YEARS.includes(_calYear) ? _calYear : LATEST_YEAR;
+
+let currentYear = DEFAULT_YEAR;
 let assessMode = 'single';
 let disposalCount = 0;
 
@@ -2968,7 +2975,7 @@ function onYearChange() {
       const baseId = c.baseId || c.id.replace(/_\d+$/, '');
       const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
       if(catEntry) {
-        const newUnitRate = catEntry.amounts[currentYear] ?? catEntry.amounts[2024] ?? 0;
+        const newUnitRate = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? 0;
         c.unitRate = newUnitRate;
         c.amount   = newUnitRate * (c.qty || 1);
       }
@@ -3649,11 +3656,11 @@ let deductionStore = { s1:[], s2:[] };
 
 function getCreditCatalogueAmount(id) {
   const c = CREDIT_CATALOGUE.find(x => x.id === id);
-  return c ? (c.amounts[currentYear] ?? c.amounts[2024] ?? 0) : 0;
+  return c ? (c.amounts[currentYear] ?? c.amounts[LATEST_YEAR] ?? 0) : 0;
 }
 function getDeductionCatalogueAmount(id) {
   const c = DEDUCTION_CATALOGUE.find(x => x.id === id);
-  return c ? (c.amounts[currentYear] ?? c.amounts[2024] ?? 0) : 0;
+  return c ? (c.amounts[currentYear] ?? c.amounts[LATEST_YEAR] ?? 0) : 0;
 }
 
 // ── Credit group definitions for accordion UI ────────────────────────────
@@ -3702,7 +3709,7 @@ function buildCreditsDeductionsArea() {
           <div class="credit-picker-row" style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--border2)">
             <select id="cd-picker-${pfx}">
               <option value="">— Quick-add credit —</option>
-              ${CREDIT_CATALOGUE.map(c=>`<option value="${c.id}">${c.nr?'◆':'◇'} ${c.label} — €${(c.amounts[currentYear]??c.amounts[2024]??0).toLocaleString()}</option>`).join('')}
+              ${CREDIT_CATALOGUE.map(c=>`<option value="${c.id}">${c.nr?'◆':'◇'} ${c.label} — €${(c.amounts[currentYear]??c.amounts[LATEST_YEAR]??0).toLocaleString()}</option>`).join('')}
             </select>
             <button class="btn btn-sm btn-primary" onclick="addCreditFromPicker('${pfx}')">+ Add</button>
           </div>
@@ -3770,7 +3777,7 @@ function renderDeductionGroups(pfx) {
 
 function renderCreditGroupItem(pfx, item) {
   const {id, def, storeEntry} = item;
-  const unitRate = def.amounts[currentYear]??def.amounts[2024]??0;
+  const unitRate = def.amounts[currentYear]??def.amounts[LATEST_YEAR]??0;
   const badgeCls = def.nr?'f11':'f12';
   const badgeLbl = def.nr?'Non-ref':'Refundable';
   if(!storeEntry) {
@@ -3801,7 +3808,7 @@ function renderCreditGroupItem(pfx, item) {
     </div>
     ${qtyUI}
     <div class="credit-entry-max">${unitRate>0&&!def.perPerson?'max '+euro(unitRate):''}</div>
-    <div class="credit-entry-input">€<input type="number" value="${amount}" min="0" step="1" class="${overLimit?'over-limit':''}" oninput="updateCreditAmount('${pfx}','${storeId}',this.value);refreshCreditGroups('${pfx}')"/></div>
+    <div class="credit-entry-input">€<input type="number" value="${amount}" min="0" step="1" class="${overLimit?'over-limit':''}" oninput="updateCreditAmount('${pfx}','${storeId}',this.value)" onchange="refreshCreditGroups('${pfx}')"/></div>
     <button class="credit-entry-remove" onclick="removeCreditAndRefresh('${pfx}','${storeId}')" title="Remove">✕</button>
   </div>`;
 }
@@ -3999,7 +4006,7 @@ function renderCreditList(pfx) {
         €<input type="number" value="${c.amount}" min="0" step="1"
           class="${overLimit ? 'over-limit' : ''}"
           ${c.perPerson ? 'title="Auto-calculated: unit rate × quantity (edit to override)"' : ''}
-          oninput="updateCreditAmount('${pfx}','${c.id}',this.value);this.className='';"
+          oninput="updateCreditAmount('${pfx}','${c.id}',this.value)" onchange="this.className='';refreshCreditGroups('${pfx}')"
           title="${overLimit ? 'Exceeds Revenue maximum for this credit' : ''}"/>
       </div>
       <button class="credit-entry-remove" onclick="removeCredit('${pfx}','${c.id}')" title="Remove">✕</button>
@@ -6932,7 +6939,7 @@ function applyCreditCaps(pfx, grossIT, empIncome, earnedIncome) {
     // ── Rule 1: Revenue maximum (catalogue) ──────────────────────────────
     const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
     if (catEntry && !catEntry.custom) {
-      const revMax = catEntry.amounts[currentYear] ?? catEntry.amounts[2024] ?? 0;
+      const revMax = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? 0;
       if (revMax > 0 && applied > revMax) {
         applied = revMax;
         reason = `Reduced to Revenue maximum for ${currentYear} (€${revMax.toLocaleString()})`;
@@ -6983,7 +6990,7 @@ function applyCreditCaps(pfx, grossIT, empIncome, earnedIncome) {
     // Limit: €18,028 (2025-2026), €17,404 (2024), €16,780 (2023)
     // We can only note the rule; the consultant must verify relative's income
     if (baseId === 'depRelative') {
-      const incomeLimit = currentYear >= 2025 ? 18028 : currentYear === 2024 ? 17404 : 16780;
+      const incomeLimit = R().credits.depRelativeLimit || 18028; // from RATES table — update there each year
       // No auto-reduction — flag reminder only
       if (applied > 0 && !reason) {
         reason = `Verify: relative's income must not exceed €${incomeLimit.toLocaleString()} (${currentYear} limit) — nil credit if exceeded`;
@@ -7023,7 +7030,7 @@ function buildCreditProformaRows(pfx, capResult) {
     const label    = (c.desc && c.desc !== c.label) ? c.desc : c.label;
     const baseId   = c.baseId || c.id;
     const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
-    const revMax   = catEntry ? (catEntry.amounts[currentYear] ?? catEntry.amounts[2024] ?? 0) : 0;
+    const revMax   = catEntry ? (catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? 0) : 0;
 
     // Build cap badge
     const capBadge = cap.capped
@@ -8492,7 +8499,7 @@ function downloadPDF() {
   const today = new Date().toLocaleDateString('en-IE',{day:'numeric',month:'long',year:'numeric'});
 
   // Rate lookup scoped to THIS return's year (not global currentYear)
-  const Ry = () => RATES[r.yr] || RATES[2025] || Object.values(RATES)[Object.keys(RATES).length-1];
+  const Ry = () => RATES[r.yr] || RATES[LATEST_YEAR] || Object.values(RATES)[Object.keys(RATES).length-1];
 
   // ── Colours ──────────────────────────────────────────────────────────
   const NAVY   = [28,53,87];
@@ -9364,7 +9371,20 @@ function newFileRef() {
 // ═══════════════════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════════════════
+// ── initYearSelector: populates year <select> from RATES keys ──────────────
+// Called once on page load. Adding a year to RATES is all that's needed to
+// have it appear in the selector — no HTML changes required.
+function initYearSelector() {
+  const sel = document.getElementById('globalYear');
+  if(!sel) return;
+  sel.innerHTML = SUPPORTED_YEARS.map(yr =>
+    `<option value="${yr}"${yr === DEFAULT_YEAR ? ' selected' : ''}>${yr}</option>`
+  ).join('');
+  currentYear = DEFAULT_YEAR;
+}
+
 window.onload = function() {
+  initYearSelector(); // populate year selector from RATES — no hardcoding needed
   onAssessChange();
   applyFormTypeUI();
   buildIncomeArea();
