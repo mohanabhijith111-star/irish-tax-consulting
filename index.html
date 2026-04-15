@@ -2031,18 +2031,18 @@ function restoreFormSnapshot(snap) {
     const sel = document.getElementById('sitFormTypeOverride');
     if(sel) sel.value = snap.formTypeOverride;
   }
-  // Set assessment mode
-  if(snap.radios?.assessMode) {
-    const radio = document.querySelector(`input[name=assessMode][value="${snap.radios.assessMode}"]`);
-    if(radio) { radio.checked=true; assessMode=snap.radios.assessMode; onAssessChange(); }
-  }
-  // Restore assessable spouse
+  // Restore assessable spouse FIRST so seedDefaultCredits gets the right value
   if(snap.assessableSpouse) {
     assessableSpouse = snap.assessableSpouse;
     const asRadio = document.querySelector(`input[name=assessableSpouse][value="${snap.assessableSpouse}"]`);
     if(asRadio) asRadio.checked = true;
     const badge = document.getElementById('assessableSpouseBadge');
     if(badge) badge.textContent = `Assessable: Spouse ${snap.assessableSpouse === 's1' ? '1' : '2'}`;
+  }
+  // Set assessment mode (after assessableSpouse so seedDefaultCredits uses correct spouse)
+  if(snap.radios?.assessMode) {
+    const radio = document.querySelector(`input[name=assessMode][value="${snap.radios.assessMode}"]`);
+    if(radio) { radio.checked=true; assessMode=snap.radios.assessMode; onAssessChange(); }
   }
   // Set year
   if(snap.year) {
@@ -2119,10 +2119,16 @@ function restoreFormSnapshot(snap) {
         } else if(baseId === 'personal_bereavement') {
           c.unitRate = yr.personal.married; c.amount = yr.personal.married;
         } else if(baseId === 'personal_married') {
+          // Use snap.assessableSpouse directly (not the global assessableSpouse which
+          // may not yet be correctly set at the time this loop runs during restore)
           let amt = 0;
           if(assessMode === 'treatment') amt = yr.personal.single;
           else if(assessMode === 'separate') amt = pfx==='s1' ? Math.floor(yr.personal.married/2) : Math.ceil(yr.personal.married/2);
-          else amt = (pfx === assessableSpouse) ? yr.personal.married : 0; // joint: only assessable spouse
+          else {
+            // Joint: use snap.assessableSpouse as the definitive source during restore
+            const effectiveAssessable = (typeof snap !== 'undefined' && snap.assessableSpouse) ? snap.assessableSpouse : assessableSpouse;
+            amt = (pfx === effectiveAssessable) ? yr.personal.married : 0;
+          }
           c.unitRate = amt; c.amount = amt;
         } else if(baseId === 'paye') {
           c.unitRate = yr.paye; c.amount = yr.paye;
