@@ -1650,6 +1650,7 @@ input,select,button,textarea{font-family:inherit}
         <div class="btn-group" style="position:sticky;bottom:0;background:var(--bg);padding:10px 0;margin:0;border-top:1px solid var(--border2);z-index:10">
           <button class="btn btn-primary" onclick="calculate()">▶ Run Computation</button>
           <button class="btn btn-secondary" id="btnEditForm" onclick="scrollToForm()" style="display:none">↑ Back to Top</button>
+          <button class="btn btn-ghost btn-sm" onclick="showCreditDebug()" style="font-size:10px;padding:4px 8px;opacity:0.6" title="Debug: show credit store state">🔍 Credits</button>
         </div>
 
       </div><!-- /personal-left -->
@@ -7968,6 +7969,29 @@ function refreshDeductionGroups(pfx) {
 }
 
 
+function showCreditDebug() {
+  const sep = String.fromCharCode(10);
+  const out = [];
+  out.push('MODE: ' + assessMode + ' | ASSESSABLE: ' + assessableSpouse + ' | YEAR: ' + currentYear);
+  out.push('--- creditStore ---');
+  ['s1','s2'].forEach(function(pfx) {
+    out.push(pfx + ':');
+    (creditStore[pfx]||[]).forEach(function(c) {
+      out.push('  ' + c.baseId + ' = ' + c.amount + (c.nr?' [NR]':''));
+    });
+  });
+  out.push('--- lastResult.creditSnapshot ---');
+  if(window._lastResult && window._lastResult.creditSnapshot) {
+    ['s1','s2'].forEach(function(pfx) {
+      out.push(pfx + ':');
+      (window._lastResult.creditSnapshot[pfx]||[]).forEach(function(c) {
+        out.push('  ' + (c.baseId||c.id) + ' = ' + c.amount);
+      });
+    });
+  } else { out.push('(none yet)'); }
+  alert(out.join(sep));
+}
+
 function calculate() {
   applyFormTypeUI(); // update auto-detection before rendering
   const yr = currentYear;
@@ -8816,7 +8840,18 @@ function renderJointResult(d) {
   // Credits — read from live creditStore (proforma renders synchronously during compute)
   const allCredits = [...(creditStore['s1']||[]), ...(creditStore['s2']||[])];
   const nrCredits  = allCredits.filter(c=>c.nr&&c.amount>0);
-  const allCapRes  = {caps:Object.assign({}, (d.capS1||{}).caps, (d.capS2||{}).caps)};
+  // Merge caps from both spouses — for shared credit IDs, keep the higher applied value
+  // (Object.assign would overwrite s1's cap with s2's cap for same credit ID e.g. personal_married)
+  const _mergedCaps = {};
+  [d.capS1, d.capS2].forEach(capRes => {
+    if(!capRes || !capRes.caps) return;
+    Object.entries(capRes.caps).forEach(([id, cap]) => {
+      if(!_mergedCaps[id] || (cap.applied||0) > (_mergedCaps[id].applied||0)) {
+        _mergedCaps[id] = cap;
+      }
+    });
+  });
+  const allCapRes = {caps: _mergedCaps};
   if(nrCredits.length || d.s1.medRelief>0 || d.s2.medRelief>0){
     rows+=`<tr class="pf-item"><td colspan="3" style="font-size:11px;font-weight:700;color:#1c3557;background:#f0f5ff;padding:5px 10px;border-top:1px solid #c7d7f0">Less: Non-Refundable Tax Credits</td></tr>`;
     nrCredits.forEach(c=>{
