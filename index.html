@@ -9143,6 +9143,7 @@ function downloadPDF() {
   try {
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({unit:'mm', format:'a4'});
+  const lr = window._lastResult; // declared early — referenced throughout downloadPDF
   const W=210, M=16, CW=178;
   const today = new Date().toLocaleDateString('en-IE',{day:'numeric',month:'long',year:'numeric'});
 
@@ -9426,7 +9427,7 @@ function downloadPDF() {
   const filingDeadline = isF11
     ? `31 October ${r.yr+1} (extended online deadline typically mid-November via ROS)`
     : `31 December ${r.yr+1} via myAccount`;
-  const lr = window._lastResult;
+  // lr already declared at top of function
   const lrBal = lr?.balance ?? 0;
   const lrLiab = lr?.totalLiability ?? 0;
   const lrPaid = lr?.totalPaid ?? 0;
