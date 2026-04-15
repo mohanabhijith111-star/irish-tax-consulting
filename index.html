@@ -2105,31 +2105,20 @@ function restoreFormSnapshot(snap) {
       creditStore = {s1:[], s2:[]};
       seedDefaultCredits();
     }
-    // Update ALL catalogue-based credit amounts to the current year
-    // using mode-aware logic for personal credits (same as onYearChange)
+    // Update catalogue credits to current year — personal credits restored as-is from snapshot
+    // (the snapshot already has the correct user-entered amounts)
     ['s1','s2'].forEach(pfx => {
       const yr = R().credits;
       creditStore[pfx].forEach(c => {
         if(c.custom) return;
         const baseId = c.baseId || c.id.replace(/_\d+$/, '');
-        if(baseId === 'personal_single' || baseId === 'personal_widowed_dep') {
-          c.unitRate = yr.personal.single; c.amount = yr.personal.single;
-        } else if(baseId === 'personal_widowed_nodep') {
-          c.unitRate = yr.personal.widowed_nodep; c.amount = yr.personal.widowed_nodep;
-        } else if(baseId === 'personal_bereavement') {
-          c.unitRate = yr.personal.married; c.amount = yr.personal.married;
-        } else if(baseId === 'personal_married') {
-          // Use snap.assessableSpouse directly (not the global assessableSpouse which
-          // may not yet be correctly set at the time this loop runs during restore)
-          let amt = 0;
-          if(assessMode === 'treatment') amt = yr.personal.single;
-          else if(assessMode === 'separate') amt = pfx==='s1' ? Math.floor(yr.personal.married/2) : Math.ceil(yr.personal.married/2);
-          else {
-            // Joint: use snap.assessableSpouse as the definitive source during restore
-            const effectiveAssessable = (typeof snap !== 'undefined' && snap.assessableSpouse) ? snap.assessableSpouse : assessableSpouse;
-            amt = (pfx === effectiveAssessable) ? yr.personal.married : 0;
-          }
-          c.unitRate = amt; c.amount = amt;
+        const isPersonalCredit = ['personal_single','personal_married','personal_widowed_dep',
+          'personal_widowed_nodep','personal_bereavement'].includes(baseId);
+        if(isPersonalCredit) {
+          // Restore snapshot amount exactly — user set this, don't override
+          // Only refresh unitRate for the "max" display label
+          const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
+          if(catEntry) c.unitRate = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? c.unitRate;
         } else if(baseId === 'paye') {
           c.unitRate = yr.paye; c.amount = yr.paye;
         } else {
@@ -3096,21 +3085,14 @@ function onYearChange() {
     creditStore[pfx].forEach(c => {
       if(c.custom) return;
       const baseId = c.baseId || c.id.replace(/_\d+$/, '');
-      // Special handling for personal credit — amount depends on assessment mode
-      if(baseId === 'personal_single' || baseId === 'personal_married' ||
-         baseId === 'personal_widowed_dep' || baseId === 'personal_widowed_nodep' ||
-         baseId === 'personal_bereavement') {
-        // Re-derive correct personal credit amount for this mode/year
-        let personalAmt = 0;
-        if(baseId === 'personal_single' || baseId === 'personal_widowed_dep') personalAmt = yr.personal.single;
-        else if(baseId === 'personal_widowed_nodep') personalAmt = yr.personal.widowed_nodep;
-        else if(baseId === 'personal_bereavement') personalAmt = yr.personal.married;
-        else if(baseId === 'personal_married') {
-          if(assessMode === 'treatment') personalAmt = yr.personal.single;
-          else if(assessMode === 'separate') personalAmt = pfx==='s1' ? Math.floor(yr.personal.married/2) : Math.ceil(yr.personal.married/2);
-          else personalAmt = (pfx === assessableSpouse) ? yr.personal.married : 0;
-        }
-        c.unitRate = personalAmt; c.amount = personalAmt;
+      // Personal credits are seeded by seedDefaultCredits on mode change.
+      // When year changes, only update the unitRate label — leave user's amount intact.
+      const isPersonalCredit = ['personal_single','personal_married','personal_widowed_dep',
+        'personal_widowed_nodep','personal_bereavement'].includes(baseId);
+      if(isPersonalCredit) {
+        const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
+        if(catEntry) c.unitRate = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? c.unitRate;
+        // c.amount left unchanged — user's entered value is preserved
       } else if(baseId === 'paye') {
         c.unitRate = yr.paye; c.amount = yr.paye;
       } else {
