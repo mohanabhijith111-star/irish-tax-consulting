@@ -2106,16 +2106,33 @@ function restoreFormSnapshot(snap) {
       seedDefaultCredits();
     }
     // Update ALL catalogue-based credit amounts to the current year
-    // (custom credits keep their manually entered amounts)
+    // using mode-aware logic for personal credits (same as onYearChange)
     ['s1','s2'].forEach(pfx => {
+      const yr = R().credits;
       creditStore[pfx].forEach(c => {
         if(c.custom) return;
         const baseId = c.baseId || c.id.replace(/_\d+$/, '');
-        const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
-        if(catEntry) {
-          const newUnitRate = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? 0;
-          c.unitRate = newUnitRate;
-          c.amount   = newUnitRate * (c.qty || 1);
+        if(baseId === 'personal_single' || baseId === 'personal_widowed_dep') {
+          c.unitRate = yr.personal.single; c.amount = yr.personal.single;
+        } else if(baseId === 'personal_widowed_nodep') {
+          c.unitRate = yr.personal.widowed_nodep; c.amount = yr.personal.widowed_nodep;
+        } else if(baseId === 'personal_bereavement') {
+          c.unitRate = yr.personal.married; c.amount = yr.personal.married;
+        } else if(baseId === 'personal_married') {
+          let amt = 0;
+          if(assessMode === 'treatment') amt = yr.personal.single;
+          else if(assessMode === 'separate') amt = pfx==='s1' ? Math.floor(yr.personal.married/2) : Math.ceil(yr.personal.married/2);
+          else amt = (pfx === assessableSpouse) ? yr.personal.married : 0; // joint: only assessable spouse
+          c.unitRate = amt; c.amount = amt;
+        } else if(baseId === 'paye') {
+          c.unitRate = yr.paye; c.amount = yr.paye;
+        } else {
+          const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
+          if(catEntry) {
+            const newUnitRate = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? 0;
+            c.unitRate = newUnitRate;
+            c.amount   = newUnitRate * (c.qty || 1);
+          }
         }
       });
     });
@@ -9232,77 +9249,108 @@ function downloadPDF() {
   const balLabel   = isRefund ? 'REFUND DUE' : 'TAX PAYABLE';
   const e2 = v => '\u20AC' + Math.abs(v||0).toLocaleString('en-IE',{minimumFractionDigits:2,maximumFractionDigits:2});
 
-  const letterHtml = `
-  <div style="font-family:'Inter',Arial,sans-serif;font-size:12px;color:#1a1a1a;
-              width:740px;padding:40px 50px;background:#fff;line-height:1.6">
+  // Pull figures from lastResult for the letter
+  const lr2       = window._lastResult || {};
+  const totalLiab = lr2.totalLiability || 0;
+  const totalPaid = lr2.totalPaid      || 0;
+  const assessTxt = r.type === 'joint'     ? 'Joint Assessment'
+                  : r.type === 'separate'  ? 'Separate Assessment'
+                  : r.type === 'treatment' ? 'Separate Treatment'
+                  : 'Single / Individual';
+  const spouseName = r.type === 'joint' ? (v('s2_fullname')||'Spouse 2') : '';
+  const preparedBy = v('preparedBy') || 'Irish Tax Consulting';
 
-    <!-- Firm header -->
+  const letterHtml = `
+  <div style="font-family:'Inter',Arial,sans-serif;font-size:11.5px;color:#1a1a1a;
+              width:740px;padding:44px 54px;background:#fff;line-height:1.65;box-sizing:border-box">
+
+    <!-- Firm letterhead -->
     <div style="display:flex;justify-content:space-between;align-items:flex-start;
-                border-bottom:3px solid #1c3557;padding-bottom:14px;margin-bottom:20px">
+                padding-bottom:16px;margin-bottom:22px;border-bottom:3px solid #1c3557">
       <div>
-        <div style="font-size:20px;font-weight:800;color:#1c3557;letter-spacing:-0.5px">
+        <div style="font-size:22px;font-weight:800;color:#1c3557;letter-spacing:-0.5px;font-family:'Georgia',serif">
           Irish Tax Consulting
         </div>
-        <div style="font-size:10px;color:#6b7280;margin-top:3px">
-          Confidential Tax Advisory — Internal Tool
+        <div style="font-size:9.5px;color:#6b7280;margin-top:4px;letter-spacing:0.05em;text-transform:uppercase">
+          Chartered Tax Advisers · Confidential
         </div>
       </div>
-      <div style="text-align:right;font-size:10px;color:#6b7280">
+      <div style="text-align:right;font-size:10px;color:#6b7280;line-height:1.8">
         <div>${today}</div>
-        <div style="margin-top:2px">File Ref: <strong>${fileRef}</strong></div>
-        <div>Tax Year: <strong>${yr}</strong></div>
+        <div>File Ref: <strong style="color:#374151">${fileRef}</strong></div>
+        <div>Tax Year: <strong style="color:#374151">${yr}</strong></div>
+        <div>Assessment: <strong style="color:#374151">${assessTxt}</strong></div>
       </div>
     </div>
 
-    <!-- Client block -->
-    <div style="background:#f0f5ff;border-left:3px solid #1c3557;padding:12px 16px;
-                margin-bottom:20px;border-radius:0 4px 4px 0">
-      <div style="font-weight:700;font-size:13px;color:#1c3557">${clientName}</div>
-      <div style="font-size:11px;color:#374151;margin-top:3px">${clientAddr}</div>
-      <div style="font-size:11px;color:#6b7280;margin-top:2px">PPS: ${ppsNo}</div>
+    <!-- Client address -->
+    <div style="margin-bottom:22px;font-size:11px;line-height:1.7">
+      <div style="font-weight:700;font-size:12px;color:#111">${clientName}</div>
+      ${spouseName ? `<div style="color:#374151">&amp; ${spouseName}</div>` : ''}
+      <div style="color:#374151;margin-top:3px">${clientAddr}</div>
+      <div style="color:#6b7280">PPS: ${ppsNo}</div>
     </div>
 
-    <div style="font-weight:700;font-size:13px;margin-bottom:8px">
-      RE: Income Tax Return — Tax Year ${yr} (${formLabel})
+    <div style="font-weight:700;font-size:12px;margin-bottom:14px;color:#1c3557">
+      RE: Income Tax Computation — Year of Assessment ${yr} — ${formLabel}
     </div>
 
-    <p style="margin:0 0 12px">Dear ${clientName},</p>
-    <p style="margin:0 0 12px">
-      We have prepared your income tax return for the year ended 31 December ${yr}.
-      The full computation is set out overleaf. Please review the figures carefully
-      and confirm they are complete and accurate before filing.
+    <p style="margin:0 0 11px">Dear ${clientName},</p>
+
+    <p style="margin:0 0 11px">
+      We have prepared your income tax return for the year ended 31 December ${yr} on the basis of
+      the information and documents provided to us. The full tax computation is enclosed overleaf.
+      Please review the figures carefully and confirm to us that they are correct and complete
+      before we proceed to file on your behalf.
     </p>
 
-    <!-- Balance box -->
-    <div style="background:${isRefund?'#f0fdf4':'#fff0f0'};border:2px solid ${isRefund?'#16a34a':'#dc2626'};
-                border-radius:6px;padding:14px 20px;margin:16px 0;display:flex;
-                justify-content:space-between;align-items:center">
-      <div style="font-size:13px;font-weight:700;color:${isRefund?'#15803d':'#dc2626'}">${balLabel}</div>
-      <div style="font-size:20px;font-weight:800;font-family:'Courier New',monospace;
-                  color:${isRefund?'#15803d':'#dc2626'}">${e2(balAmt)}</div>
-    </div>
+    <!-- Summary table -->
+    <table style="width:100%;border-collapse:collapse;margin:18px 0;font-size:11px">
+      <tr style="background:#1c3557;color:#fff">
+        <th style="padding:8px 12px;text-align:left;font-weight:600;letter-spacing:0.03em" colspan="2">Tax Summary — Year ${yr}</th>
+      </tr>
+      <tr style="background:#f8f9fb">
+        <td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;color:#374151">Total Tax Liability</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-family:'Courier New',monospace;font-weight:700">${e2(totalLiab)}</td>
+      </tr>
+      <tr>
+        <td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;color:#374151">Tax Already Paid / Deducted at Source</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-family:'Courier New',monospace;font-weight:700">(${e2(totalPaid)})</td>
+      </tr>
+      <tr style="background:${isRefund?'#f0fdf4':'#fef2f2'}">
+        <td style="padding:9px 12px;font-weight:700;color:${isRefund?'#15803d':'#dc2626'};font-size:12px">${balLabel}</td>
+        <td style="padding:9px 12px;text-align:right;font-family:'Courier New',monospace;font-weight:800;font-size:14px;color:${isRefund?'#15803d':'#dc2626'}">${e2(balAmt)}</td>
+      </tr>
+    </table>
 
-    <p style="margin:0 0 8px;font-size:11px;color:#374151">
+    <p style="margin:0 0 10px;font-size:11px;color:#374151">
       ${isRefund
-        ? `A refund of <strong>${e2(balAmt)}</strong> is due to you from Revenue. This will be credited to your bank account following submission and processing of your return.`
-        : `A balance of <strong>${e2(balAmt)}</strong> is payable to Revenue by <strong>${deadline}</strong>. Payment can be made via ROS or myAccount.`
+        ? `A refund of <strong>${e2(balAmt)}</strong> is due to you from Revenue. This will be issued to your nominated bank account following submission and processing of your return by Revenue Commissioners.`
+        : `A balance of <strong>${e2(balAmt)}</strong> is payable to Revenue Commissioners by <strong>${deadline}</strong>. Payment can be made online via ROS (Form 11) or myAccount (Form 12). Please ensure payment is made on time to avoid interest and surcharge.`
       }
     </p>
 
-    <p style="margin:12px 0 8px;font-size:11px;color:#374151">
-      <strong>Filing deadline:</strong> ${deadline}
+    <p style="margin:0 0 10px;font-size:11px;color:#374151">
+      <strong>Filing deadline:</strong> ${deadline}.
     </p>
 
-    <p style="margin:12px 0 8px;font-size:11px;color:#374151">
-      If you have any queries on the enclosed computation, please do not hesitate to contact us.
+    <p style="margin:0 0 10px;font-size:11px;color:#374151">
+      <strong>Next steps:</strong> Please review the enclosed computation, sign the authority form where applicable,
+      and revert to us with any queries or corrections. Once you confirm the figures are correct,
+      we will proceed to file your return with Revenue.
     </p>
 
-    <p style="margin:16px 0 4px;font-size:11px">Yours sincerely,</p>
-    <div style="margin-top:30px;border-top:1px solid #d1d5db;padding-top:8px;
-                font-size:10px;color:#9ca3af">
-      Irish Tax Consulting · Confidential · For addressee only ·
-      This computation is prepared for advisory purposes only.
-      Verify all figures against your Revenue myAccount records before filing.
+    <p style="margin:16px 0 6px;font-size:11px">Yours faithfully,</p>
+    <div style="margin-top:36px;font-size:11px;font-weight:600;color:#1c3557">${preparedBy}</div>
+    <div style="font-size:10px;color:#6b7280">Prepared by · Irish Tax Consulting</div>
+
+    <div style="margin-top:28px;padding-top:12px;border-top:1px solid #e5e7eb;
+                font-size:9.5px;color:#9ca3af;line-height:1.6">
+      <strong>Disclaimer:</strong> This computation has been prepared solely on the basis of information
+      provided by the client and is for advisory purposes only. Irish Tax Consulting accepts no liability
+      for errors arising from incomplete or inaccurate information. All figures should be verified against
+      Revenue records before filing. This document is confidential and is intended only for the named
+      addressee.
     </div>
   </div>`;
 
@@ -9341,38 +9389,39 @@ function downloadPDF() {
       scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff',
       width: 740, windowWidth: 840, scrollX: 0, scrollY: 0,
       onclone: (clonedDoc) => {
-        // Remove interactive elements from the clone
-        clonedDoc.querySelectorAll('button, input[type=number], input[type=text], select, .calc-expander').forEach(el => {
-          if(el.tagName === 'INPUT' || el.tagName === 'SELECT') {
-            const span = clonedDoc.createElement('span');
-            span.textContent = el.value || el.textContent;
-            span.style.cssText = 'font-weight:600;';
-            el.parentNode.replaceChild(span, el);
-          } else if(el.classList.contains('calc-expander')) {
-            el.style.display = 'none';
-          } else {
-            el.style.display = 'none';
-          }
+        clonedDoc.querySelectorAll('button, .calc-expander, .calc-toggle-btn').forEach(el => {
+          el.style.display = 'none';
+        });
+        clonedDoc.querySelectorAll('input[type=number], input[type=text], select').forEach(el => {
+          const span = clonedDoc.createElement('span');
+          span.textContent = el.value || '';
+          span.style.cssText = 'font-weight:600;font-size:inherit;';
+          el.parentNode.replaceChild(span, el);
         });
       }
     }).then(proformaCanvas => {
-      // Restore proforma style
       proforma.setAttribute('style', origStyle);
 
-      const pfImgH = proformaCanvas.height * (A4W / proformaCanvas.width);
-      const pagesNeeded = Math.ceil(pfImgH / A4H);
-      const sliceH = proformaCanvas.height / pagesNeeded;
+      // Smart page splitting — scale canvas to fit A4 width exactly
+      // then slice at natural page boundaries (no blank gaps)
+      const scale = A4W / (proformaCanvas.width / 2); // account for 2x canvas scale
+      const pageHeightPx = (A4H / scale) * 2;        // height in canvas pixels per A4 page
+      const totalPages = Math.ceil(proformaCanvas.height / pageHeightPx);
 
-      for(let p = 0; p < pagesNeeded; p++) {
+      for(let p = 0; p < totalPages; p++) {
         doc.addPage();
-        // Slice the canvas vertically for each page
+        const srcY  = Math.round(p * pageHeightPx);
+        const srcH  = Math.min(pageHeightPx, proformaCanvas.height - srcY);
+        const destH = srcH * scale / 2; // mm height this slice occupies
+
         const sliceCanvas = document.createElement('canvas');
-        sliceCanvas.width = proformaCanvas.width;
-        sliceCanvas.height = Math.min(sliceH, proformaCanvas.height - p * sliceH);
+        sliceCanvas.width  = proformaCanvas.width;
+        sliceCanvas.height = srcH;
         const ctx = sliceCanvas.getContext('2d');
-        ctx.drawImage(proformaCanvas, 0, p * sliceH, sliceCanvas.width, sliceCanvas.height, 0, 0, sliceCanvas.width, sliceCanvas.height);
-        const sliceImgH = sliceCanvas.height * (A4W / sliceCanvas.width);
-        doc.addImage(sliceCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, A4W, sliceImgH);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+        ctx.drawImage(proformaCanvas, 0, srcY, sliceCanvas.width, srcH, 0, 0, sliceCanvas.width, srcH);
+        doc.addImage(sliceCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, A4W, destH);
       }
 
       // File name
