@@ -521,8 +521,8 @@ input,select,button,textarea{font-family:inherit}
 }
 .credit-entry {
   display:grid; grid-template-columns:1fr auto auto auto; align-items:center;
-  gap:0; border:1px solid var(--border2); border-radius:4px; margin-bottom:6px;
-  overflow:hidden; background:var(--surface);
+  gap:0; border:1px solid var(--border2); border-radius:4px; margin-bottom:0;
+  background:var(--surface);
 }
 .credit-entry:hover { border-color:var(--accent2); }
 .credit-entry-label {
@@ -558,6 +558,7 @@ input,select,button,textarea{font-family:inherit}
 }
 .calc-row {
   display:grid; grid-template-columns:1fr auto auto auto; align-items:center; gap:0;
+  border-radius:4px 4px 0 0;
 }
 .calc-row.deduction-cols { grid-template-columns:1fr auto auto auto; }
 .calc-toggle-btn {
@@ -631,8 +632,8 @@ input,select,button,textarea{font-family:inherit}
 }
 .deduction-entry {
   display:grid; grid-template-columns:1fr auto auto; align-items:center;
-  gap:0; border:1px solid var(--border2); border-radius:4px; margin-bottom:6px;
-  overflow:hidden; background:var(--surface);
+  gap:0; border:1px solid var(--border2); border-radius:4px; margin-bottom:0;
+  background:var(--surface);
 }
 .deduction-entry:hover { border-color:#6b9f5e; }
 .deduction-entry-label {
@@ -646,9 +647,10 @@ input,select,button,textarea{font-family:inherit}
 .deduction-entry-input input {
   width:90px; text-align:right; border:1px solid var(--border); border-radius:3px;
   padding:5px 8px; font-size:13px; font-weight:600; color:#4a7a40;
+}
 /* ── Phase 4: Credit Groups Accordion ── */
 .cd-group {
-  border:1px solid var(--border2);border-radius:4px;margin-bottom:8px;overflow:hidden;
+  border:1px solid var(--border2);border-radius:4px;margin-bottom:8px;
 }
 .cd-group-hdr {
   display:flex;align-items:center;justify-content:space-between;
