@@ -2679,7 +2679,7 @@ function showToast(msg) {
 const RATES = {
   2022: {
     bands: { single:36800, spccc:40800, married1:45800, married2max:27800 },
-    credits: { personal:{single:1700,married:3400,widowed_dep:1700,widowed_nodep:2240},
+    credits: { personal:{single:1700,married:3400,widowed_dep:1700,widowed_nodep:2240,bereavement:3400},
       paye:1700, earnedIncome:1700, spccc:1650, age:{single:245,married:490},
       homeCarer:1600, incapChild:3300, depRelative:245, blind:{single:1650,both:3300},
       rent:{single:500,married:1000}, mortgage:0, guideDog:825 },
@@ -2688,7 +2688,7 @@ const RATES = {
   },
   2023: {
     bands: { single:40000, spccc:44000, married1:49000, married2max:31000 },
-    credits: { personal:{single:1775,married:3550,widowed_dep:1775,widowed_nodep:2315},
+    credits: { personal:{single:1775,married:3550,widowed_dep:1775,widowed_nodep:2315,bereavement:3550},
       paye:1775, earnedIncome:1775, spccc:1650, age:{single:245,married:490},
       homeCarer:1700, incapChild:3300, depRelative:245, blind:{single:1650,both:3300},
       rent:{single:500,married:1000}, mortgage:0, guideDog:825 },
@@ -2697,7 +2697,7 @@ const RATES = {
   },
   2024: {
     bands: { single:42000, spccc:46000, married1:51000, married2max:33000 },
-    credits: { personal:{single:1875,married:3750,widowed_dep:1875,widowed_nodep:2415},
+    credits: { personal:{single:1875,married:3750,widowed_dep:1875,widowed_nodep:2415,bereavement:3750},
       paye:1875, earnedIncome:1875, spccc:1750, age:{single:245,married:490},
       homeCarer:1800, incapChild:3500, depRelative:245, blind:{single:1650,both:3300},
       rent:{single:1000,married:2000}, mortgage:1250, guideDog:825 },
@@ -2706,7 +2706,7 @@ const RATES = {
   },
   2025: {
     bands: { single:44000, spccc:48000, married1:53000, married2max:35000 },
-    credits: { personal:{single:2000,married:4000,widowed_dep:2000,widowed_nodep:2540},
+    credits: { personal:{single:2000,married:4000,widowed_dep:2000,widowed_nodep:2540,bereavement:4000},
       paye:2000, earnedIncome:2000, spccc:1900, age:{single:245,married:490},
       homeCarer:1950, incapChild:3800, depRelative:305, blind:{single:1950,both:3900},
       rent:{single:1000,married:2000}, mortgage:1250, guideDog:825 },
@@ -2715,7 +2715,7 @@ const RATES = {
   },
   2026: {
     bands: { single:44000, spccc:48000, married1:53000, married2max:35000 },
-    credits: { personal:{single:2000,married:4000,widowed_dep:2000,widowed_nodep:2540},
+    credits: { personal:{single:2000,married:4000,widowed_dep:2000,widowed_nodep:2540,bereavement:4000},
       paye:2000, earnedIncome:2000, spccc:1900, age:{single:245,married:490},
       homeCarer:1950, incapChild:3800, depRelative:305, blind:{single:1950,both:3900},
       rent:{single:1000,married:2000}, mortgage:1250, guideDog:825 },
@@ -3551,6 +3551,9 @@ const CREDIT_CATALOGUE = [
     amounts:{2022:1700,2023:1775,2024:1875,2025:2000,2026:2000} },
   { id:'personal_widowed_nodep', label:'Personal Credit (Widowed, no dep. children)', cat:'personal', nr:true, f12:true,
     amounts:{2022:2240,2023:2315,2024:2415,2025:2540,2026:2540} },
+  { id:'personal_bereavement',  label:'Personal Credit (Bereavement Year)',          cat:'personal', nr:true, f12:true,
+    note:'Year of death of spouse/CP — full married personal credit applies regardless of subsequent status',
+    amounts:{2022:3400,2023:3550,2024:3750,2025:4000,2026:4000} },
   { id:'paye',              label:'Employee (PAYE) Tax Credit',            cat:'employment',nr:true,  f12:true,
     note:'Automatic — employment income only; cannot combine with Earned Income Credit',
     amounts:{2022:1700,2023:1775,2024:1875,2025:2000,2026:2000} },
@@ -3656,7 +3659,7 @@ function getDeductionCatalogueAmount(id) {
 // ── Credit group definitions for accordion UI ────────────────────────────
 const CREDIT_GROUPS_META = [
   { id:'g-personal',  label:'Personal & Employment', icon:'👤', open:true,
-    ids:['personal_single','personal_married','personal_widowed_dep','personal_widowed_nodep','paye','earnedIncome'] },
+    ids:['personal_single','personal_married','personal_widowed_dep','personal_widowed_nodep','personal_bereavement','paye','earnedIncome'] },
   { id:'g-family',    label:'Family & Dependants',   icon:'👨‍👩‍👧', open:false,
     ids:['spccc','homeCarer','incapChild','depRelative','widowedParent1','widowedParent2','widowedParent3','widowedParent4','widowedParent5'] },
   { id:'g-disability',label:'Disability & Care',     icon:'♿', open:false,
@@ -6899,7 +6902,7 @@ function applyCreditCaps(pfx, grossIT, empIncome, earnedIncome) {
   //  • Refundable credits (Rent, Mortgage) applied after, can create a refund
 
   const CREDIT_ORDER = [
-    'personal','paye','earnedIncome','age','homeCarer',
+    'personal','personal_single','personal_married','personal_widowed_dep','personal_widowed_nodep','personal_bereavement','paye','earnedIncome','age','homeCarer',
     'spccc','depRelative','incapChild','blind','guideDog',
     'widowedParent','widowedParentYr1','widowedParentYr2','widowedParentYr3','widowedParentYr4','widowedParentYr5',
     'rent','mortgage'
