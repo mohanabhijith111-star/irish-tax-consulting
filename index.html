@@ -3031,25 +3031,58 @@ function onYearChange() {
   document.getElementById('yearSubtitle').textContent = `Tax Year ${currentYear} — Formal Tax Proforma`;
   document.getElementById('statusYear').textContent = `Tax Year ${currentYear}`;
   document.getElementById('pageMeta').textContent = `Full Irish Tax Proforma · Tax Year ${currentYear}`;
-  buildIncomeArea();
   buildTaxPaidArea();
-  // Update all catalogue credit amounts to the newly selected year
-  // (seeded defaults + any catalogue-based credits already added)
+  // Update ALL catalogue-based credit and deduction amounts to the selected year.
+  // This is the single authoritative update — no reset/re-seed needed.
+  // Custom credits/deductions keep their manually entered amounts.
   ['s1','s2'].forEach(pfx => {
+    // Update default seeded credits (personal, paye) using RATES for the new year
+    const yr = R().credits; // R() now reads RATES[currentYear]
     creditStore[pfx].forEach(c => {
-      if(c.custom) return; // custom credits keep their manually entered amount
+      if(c.custom) return;
       const baseId = c.baseId || c.id.replace(/_\d+$/, '');
-      const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
-      if(catEntry) {
-        const newUnitRate = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? 0;
-        c.unitRate = newUnitRate;
-        c.amount   = newUnitRate * (c.qty || 1);
+      // Special handling for personal credit — amount depends on assessment mode
+      if(baseId === 'personal_single' || baseId === 'personal_married' ||
+         baseId === 'personal_widowed_dep' || baseId === 'personal_widowed_nodep' ||
+         baseId === 'personal_bereavement') {
+        // Re-derive correct personal credit amount for this mode/year
+        let personalAmt = 0;
+        if(baseId === 'personal_single' || baseId === 'personal_widowed_dep') personalAmt = yr.personal.single;
+        else if(baseId === 'personal_widowed_nodep') personalAmt = yr.personal.widowed_nodep;
+        else if(baseId === 'personal_bereavement') personalAmt = yr.personal.married;
+        else if(baseId === 'personal_married') {
+          if(assessMode === 'treatment') personalAmt = yr.personal.single;
+          else if(assessMode === 'separate') personalAmt = pfx==='s1' ? Math.floor(yr.personal.married/2) : Math.ceil(yr.personal.married/2);
+          else personalAmt = (pfx === assessableSpouse) ? yr.personal.married : 0;
+        }
+        c.unitRate = personalAmt; c.amount = personalAmt;
+      } else if(baseId === 'paye') {
+        c.unitRate = yr.paye; c.amount = yr.paye;
+      } else {
+        const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
+        if(catEntry) {
+          const newUnitRate = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? 0;
+          c.unitRate = newUnitRate;
+          c.amount   = newUnitRate * (c.qty || 1);
+        }
       }
     });
+    deductionStore[pfx].forEach(d => {
+      if(d.custom || d.perDay) return;
+      const baseId = d.baseId || d.id;
+      const catEntry = DEDUCTION_CATALOGUE.find(x => x.id === baseId);
+      if(catEntry && !catEntry.perDay) {
+        d.amount = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? d.amount;
+      }
+    });
+    // Re-render accordion and flat list with updated amounts
+    refreshCreditGroups(pfx);
     const el = document.getElementById(`cd-credits-list-${pfx}`);
     if(el) el.innerHTML = renderCreditList(pfx);
-    refreshCreditGroups(pfx);
+    checkCreditFloor(pfx);
   });
+  // Rebuild the credit picker dropdown so it shows new year amounts
+  buildCreditsDeductionsArea();
   // Generate a new file reference for the newly selected year
   generateFileRef();
 }
@@ -3865,17 +3898,25 @@ function renderCreditGroupItem(pfx, item) {
   const qty      = storeEntry.qty||1;
   const overLimit = unitRate>0&&!def.perPerson&&amount>unitRate;
   const qtyUI    = def.perPerson?`<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);margin-right:6px"><span>×</span><input type="number" value="${qty}" min="1" max="20" step="1" style="width:42px;border:1px solid var(--accent);border-radius:3px;padding:2px 4px;text-align:center;font-size:12px;font-weight:700;color:var(--accent)" oninput="updateCreditQty('${pfx}','${storeId}',this.value)"/><span style="color:var(--text3)">${unitRate>0?'@ '+euro(unitRate)+' ea':''}</span></div>`:'';
+  const hasCalc = CALC_REGISTRY[id] != null;
+  const calcBtn = hasCalc
+    ? `<button class="calc-toggle-btn" id="calc-btn-${pfx}-${storeId}" onclick="toggleCalcExpander('${pfx}','${storeId}','${id}')" title="Open calculator">🧮</button>`
+    : '';
   return `
-  <div class="credit-entry" id="ce-${pfx}-${storeId}" style="background:#f0f7ff;border-color:var(--accent2)">
-    <div class="credit-entry-label">
-      <span class="ft-badge ${badgeCls}" style="font-size:9px;padding:1px 5px;margin-right:5px">${badgeLbl}</span>
-      ${def.custom?`<input type="text" value="${storeEntry.desc||def.label}" style="border:none;background:none;font-size:12px;font-weight:600;color:var(--text);width:200px;outline:none" onchange="updateCreditDesc('${pfx}','${storeId}',this.value)"/>`:def.label}
-      ${def.note?`<span class="credit-entry-sub">${def.note}</span>`:''}
+  <div class="calc-wrap" id="cw-${pfx}-${storeId}" style="margin-bottom:6px">
+    <div class="credit-entry calc-row" style="border:none;margin:0;background:#f0f7ff;border-radius:${hasCalc?'4px 4px 0 0':'4px'}">
+      <div class="credit-entry-label">
+        <span class="ft-badge ${badgeCls}" style="font-size:9px;padding:1px 5px;margin-right:5px">${badgeLbl}</span>
+        ${def.custom?`<input type="text" value="${storeEntry.desc||def.label}" style="border:none;background:none;font-size:12px;font-weight:600;color:var(--text);width:200px;outline:none" onchange="updateCreditDesc('${pfx}','${storeId}',this.value)"/>`:def.label}
+        ${def.note?`<span class="credit-entry-sub">${def.note}</span>`:''}
+      </div>
+      ${qtyUI}
+      <div class="credit-entry-max">${unitRate>0&&!def.perPerson?'max '+euro(unitRate):''}</div>
+      <div class="credit-entry-input">€<input type="number" value="${amount}" min="0" step="1" class="${overLimit?'over-limit':''}" oninput="updateCreditAmount('${pfx}','${storeId}',this.value)" onchange="refreshCreditGroups('${pfx}')"/></div>
+      ${calcBtn}
+      <button class="credit-entry-remove" onclick="removeCreditAndRefresh('${pfx}','${storeId}')" title="Remove">✕</button>
     </div>
-    ${qtyUI}
-    <div class="credit-entry-max">${unitRate>0&&!def.perPerson?'max '+euro(unitRate):''}</div>
-    <div class="credit-entry-input">€<input type="number" value="${amount}" min="0" step="1" class="${overLimit?'over-limit':''}" oninput="updateCreditAmount('${pfx}','${storeId}',this.value)" onchange="refreshCreditGroups('${pfx}')"/></div>
-    <button class="credit-entry-remove" onclick="removeCreditAndRefresh('${pfx}','${storeId}')" title="Remove">✕</button>
+    <div class="calc-expander" id="calc-${pfx}-${storeId}"></div>
   </div>`;
 }
 
@@ -3893,15 +3934,23 @@ function renderDeductionGroupItem(pfx, item) {
   }
   const storeId = storeEntry.id;
   const amount  = storeEntry.amount||0;
+  const hasCalc = CALC_REGISTRY[id] != null;
+  const calcBtn = hasCalc
+    ? `<button class="calc-toggle-btn" id="calc-btn-${pfx}-${storeId}" onclick="toggleCalcExpander('${pfx}','${storeId}','${id}')" title="Open calculator">🧮</button>`
+    : '';
   return `
-  <div class="deduction-entry" id="de-${pfx}-${storeId}" style="background:#f4fcf2;border-color:#a0c898">
-    <div class="deduction-entry-label">
-      ${def.custom?`<input type="text" value="${storeEntry.desc||def.label}" style="border:none;background:none;font-size:12px;font-weight:600;color:var(--text);width:200px;outline:none" onchange="updateDeductionDesc('${pfx}','${storeId}',this.value)"/>`:def.label}
-      ${def.note?`<span class="credit-entry-sub">${def.note}</span>`:''}
-      ${def.perDay?`<span class="credit-entry-sub">€3.20/day × <input type="number" min="0" step="1" style="width:55px;border:1px solid var(--border);border-radius:2px;padding:2px 4px;font-size:11px" oninput="updateDeductionDays('${pfx}','${storeId}',this.value)"/> days</span>`:''}
+  <div class="calc-wrap" id="dw-${pfx}-${storeId}" style="margin-bottom:6px">
+    <div class="deduction-entry calc-row deduction-cols" style="border:none;margin:0;background:#f4fcf2;border-radius:${hasCalc?'4px 4px 0 0':'4px'}">
+      <div class="deduction-entry-label">
+        ${def.custom?`<input type="text" value="${storeEntry.desc||def.label}" style="border:none;background:none;font-size:12px;font-weight:600;color:var(--text);width:200px;outline:none" onchange="updateDeductionDesc('${pfx}','${storeId}',this.value)"/>`:def.label}
+        ${def.note?`<span class="credit-entry-sub">${def.note}</span>`:''}
+        ${def.perDay?`<span class="credit-entry-sub">€3.20/day × <input type="number" min="0" step="1" style="width:55px;border:1px solid var(--border);border-radius:2px;padding:2px 4px;font-size:11px" oninput="updateDeductionDays('${pfx}','${storeId}',this.value)"/> days</span>`:''}
+      </div>
+      <div class="deduction-entry-input">€<input type="number" value="${amount}" min="0" step="1" ${def.perDay?'readonly style="background:var(--surface2)"':''} oninput="updateDeductionAmount('${pfx}','${storeId}',this.value)"/></div>
+      ${calcBtn}
+      <button class="credit-entry-remove" onclick="removeDeductionAndRefresh('${pfx}','${storeId}')" title="Remove">✕</button>
     </div>
-    <div class="deduction-entry-input">€<input type="number" value="${amount}" min="0" step="1" ${def.perDay?'readonly style="background:var(--surface2)"':''} oninput="updateDeductionAmount('${pfx}','${storeId}',this.value)"/></div>
-    <button class="credit-entry-remove" onclick="removeDeductionAndRefresh('${pfx}','${storeId}')" title="Remove">✕</button>
+    <div class="calc-expander" id="calc-${pfx}-${storeId}"></div>
   </div>`;
 }
 
@@ -4193,12 +4242,12 @@ function seedDefaultCredits() {
     }
     const personalDef = CREDIT_CATALOGUE.find(c => c.id === personalId);
     creditStore[pfx].push({ id: personalId, baseId: personalId, label: personalDef.label,
-      note: personalDef.note||'', amount: personalAmt, nr: true, custom: false, desc: '' });
+      note: personalDef.note||'', amount: personalAmt, unitRate: personalAmt, nr: true, custom: false, desc: '' });
 
     // PAYE credit (if has employment income — default on)
     const payeDef = CREDIT_CATALOGUE.find(c => c.id === 'paye');
     creditStore[pfx].push({ id: 'paye', baseId: 'paye', label: payeDef.label,
-      note: payeDef.note||'', amount: yr.paye, nr: true, custom: false, desc: '' });
+      note: payeDef.note||'', amount: yr.paye, unitRate: yr.paye, nr: true, custom: false, desc: '' });
   };
 
   seedFor('s1', false);
@@ -7599,21 +7648,37 @@ function toggleCalcExpander(pfx, storeId, baseId) {
 function applyCalcResult(pfx, storeId) {
   const btn = document.getElementById(`calc-apply-${pfx}-${storeId}`);
   if(!btn || btn.disabled) return;
-  const val = parseFloat(btn.dataset.amount)||0;
-  // Is it a credit or deduction?
+  const val    = parseFloat(btn.dataset.amount)||0;
+  const baseId = btn.dataset.baseId;
+  // Save expander HTML before refresh destroys it
+  const expanderHtml = document.getElementById(`calc-${pfx}-${storeId}`)?.innerHTML || '';
+  // Update store
   const credit = creditStore[pfx]?.find(c=>c.id===storeId);
   const ded    = deductionStore[pfx]?.find(d=>d.id===storeId);
   if(credit) {
     credit.amount = val;
-    refreshCreditList(pfx);
     refreshCreditGroups(pfx);
   } else if(ded) {
     ded.amount = val;
-    refreshDeductionList(pfx);
     refreshDeductionGroups(pfx);
   }
-  // Re-open expander after refresh
-  setTimeout(()=>{ toggleCalcExpander(pfx, storeId, btn.dataset.baseId); toggleCalcExpander(pfx, storeId, btn.dataset.baseId); }, 50);
+  // Reopen expander with saved HTML after DOM refresh
+  setTimeout(()=>{
+    const panel = document.getElementById(`calc-${pfx}-${storeId}`);
+    const toggleBtn = document.getElementById(`calc-btn-${pfx}-${storeId}`);
+    if(panel && expanderHtml) {
+      panel.innerHTML = expanderHtml;
+      panel.classList.add('open');
+      if(toggleBtn) toggleBtn.classList.add('active');
+      // Show success flash on apply button
+      const newApplyBtn = document.getElementById(`calc-apply-${pfx}-${storeId}`);
+      if(newApplyBtn) {
+        newApplyBtn.textContent = '✔ Applied!';
+        newApplyBtn.style.background = '#15803d';
+        setTimeout(()=>{ newApplyBtn.textContent = '✔ Apply to Return'; newApplyBtn.style.background = ''; }, 1800);
+      }
+    }
+  }, 30);
 }
 
 // ── Main calc engine ─────────────────────────────────────────────────────
