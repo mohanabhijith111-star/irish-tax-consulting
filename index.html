@@ -6,7 +6,29 @@
 <title>Irish Tax Consulting — Internal Tax Computation System</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,300;0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+// jsPDF loaded inline to avoid CDN tracking prevention blocks (Edge/Firefox)
+// If CDN fails, PDF export will show a clear error message rather than crashing
+(function() {
+  function loadJsPDF(urls, idx) {
+    if(idx >= urls.length) {
+      console.warn('jsPDF: all CDN sources failed — PDF export unavailable');
+      window._jspdfLoadFailed = true;
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = urls[idx];
+    s.crossOrigin = 'anonymous';
+    s.onerror = () => loadJsPDF(urls, idx + 1);
+    document.head.appendChild(s);
+  }
+  loadJsPDF([
+    'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js',
+    'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+  ], 0);
+})();
+</script>
 <style>
 /* ═══════════════════════════════════════════════════════════
    DESIGN SYSTEM — FORMAL INTERNAL TOOL
@@ -537,7 +559,7 @@ input,select,button,textarea{font-family:inherit}
 .calc-row {
   display:grid; grid-template-columns:1fr auto auto auto; align-items:center; gap:0;
 }
-.calc-row.deduction-cols { grid-template-columns:1fr auto auto; }
+.calc-row.deduction-cols { grid-template-columns:1fr auto auto auto; }
 .calc-toggle-btn {
   padding:6px 10px; background:none; border:none; border-left:1px solid var(--border2);
   cursor:pointer; font-size:13px; color:var(--accent2); line-height:1;
@@ -3028,9 +3050,9 @@ function syncClientToSpouse1() {
 
 function onYearChange() {
   currentYear = parseInt(v('globalYear'));
-  document.getElementById('yearSubtitle').textContent = `Tax Year ${currentYear} — Formal Tax Proforma`;
-  document.getElementById('statusYear').textContent = `Tax Year ${currentYear}`;
-  document.getElementById('pageMeta').textContent = `Full Irish Tax Proforma · Tax Year ${currentYear}`;
+  const _ys = document.getElementById('yearSubtitle'); if(_ys) _ys.textContent = `Tax Year ${currentYear} — Formal Tax Proforma`;
+  const _sy = document.getElementById('statusYear');  if(_sy) _sy.textContent = `Tax Year ${currentYear}`;
+  const _pm = document.getElementById('pageMeta');    if(_pm) _pm.textContent = `Full Irish Tax Proforma · Tax Year ${currentYear}`;
   buildTaxPaidArea();
   // Update ALL catalogue-based credit and deduction amounts to the selected year.
   // This is the single authoritative update — no reset/re-seed needed.
@@ -9112,6 +9134,10 @@ function downloadPDFForReturn(rid, event) {
 function downloadPDF() {
   const r = window._lastResult;
   if(!r) { alert('Please run a computation first.'); return; }
+  if(window._jspdfLoadFailed || !window.jspdf) {
+    alert('PDF export is unavailable — the jsPDF library could not be loaded.\n\nThis is usually caused by browser tracking prevention blocking the CDN.\n\nTry: Edge/Firefox → Settings → Privacy → turn off Tracking Prevention temporarily, then reload.');
+    return;
+  }
   try {
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({unit:'mm', format:'a4'});
