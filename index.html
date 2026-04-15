@@ -2096,41 +2096,33 @@ function restoreFormSnapshot(snap) {
     // to ensure credits always reflect the current year's correct amounts.
     // Deduction store is restored from snapshot as it contains user-entered custom values.
     if(snap.deductionStore) { deductionStore = snap.deductionStore; ['s1','s2'].forEach(p=>{ const el=document.getElementById(`cd-deductions-list-${p}`); if(el) el.innerHTML=renderDeductionList(p); }); }
-    // Restore creditStore directly from snapshot (preserves all user entries and quantities)
-    // then update all catalogue-based amounts to the current year
+    // Restore credits: always re-seed defaults fresh (personal + paye) from current rules,
+    // then add back any non-default credits from the snapshot.
+    // This prevents stale snapshot values for default credits from persisting.
+    creditStore = {s1:[], s2:[]};
+    seedDefaultCredits(); // seeds personal_married/single and paye correctly for current mode
     if(snap.creditStore) {
-      creditStore = JSON.parse(JSON.stringify(snap.creditStore));
-    } else {
-      // No snapshot — seed defaults
-      creditStore = {s1:[], s2:[]};
-      seedDefaultCredits();
-    }
-    // Update catalogue credits to current year — personal credits restored as-is from snapshot
-    // (the snapshot already has the correct user-entered amounts)
-    ['s1','s2'].forEach(pfx => {
-      const yr = R().credits;
-      creditStore[pfx].forEach(c => {
-        if(c.custom) return;
-        const baseId = c.baseId || c.id.replace(/_\d+$/, '');
-        const isPersonalCredit = ['personal_single','personal_married','personal_widowed_dep',
-          'personal_widowed_nodep','personal_bereavement'].includes(baseId);
-        if(isPersonalCredit) {
-          // Restore snapshot amount exactly — user set this, don't override
-          // Only refresh unitRate for the "max" display label
-          const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
-          if(catEntry) c.unitRate = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? c.unitRate;
-        } else if(baseId === 'paye') {
-          c.unitRate = yr.paye; c.amount = yr.paye;
-        } else {
-          const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
-          if(catEntry) {
-            const newUnitRate = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? 0;
-            c.unitRate = newUnitRate;
-            c.amount   = newUnitRate * (c.qty || 1);
+      // Overlay non-default credits from snapshot (user-added credits beyond personal+paye)
+      const defaultIds = new Set(['personal_single','personal_married','personal_widowed_dep',
+        'personal_widowed_nodep','personal_bereavement','paye']);
+      ['s1','s2'].forEach(pfx => {
+        (snap.creditStore[pfx]||[]).forEach(snapCredit => {
+          const baseId = snapCredit.baseId || snapCredit.id.replace(/_\d+$/, '');
+          if(defaultIds.has(baseId)) return; // skip defaults — already seeded correctly
+          // Only add if not already present
+          if(!creditStore[pfx].some(c => c.id === snapCredit.id)) {
+            // Update catalogue amount to current year
+            const catEntry = CREDIT_CATALOGUE.find(x => x.id === baseId);
+            if(catEntry && !snapCredit.custom) {
+              const newRate = catEntry.amounts[currentYear] ?? catEntry.amounts[LATEST_YEAR] ?? 0;
+              snapCredit.unitRate = newRate;
+              snapCredit.amount   = newRate * (snapCredit.qty || 1);
+            }
+            creditStore[pfx].push(snapCredit);
           }
-        }
+        });
       });
-    });
+    }
     ['s1','s2'].forEach(p=>{
       const el=document.getElementById(`cd-credits-list-${p}`); if(el) el.innerHTML=renderCreditList(p);
       refreshCreditGroups(p); // also refresh accordion view
