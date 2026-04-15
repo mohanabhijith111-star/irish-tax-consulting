@@ -7,26 +7,34 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,300;0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <script>
-// jsPDF loaded inline to avoid CDN tracking prevention blocks (Edge/Firefox)
-// If CDN fails, PDF export will show a clear error message rather than crashing
+// PDF libraries — loaded with CDN fallback chain to handle tracking prevention
 (function() {
-  function loadJsPDF(urls, idx) {
-    if(idx >= urls.length) {
-      console.warn('jsPDF: all CDN sources failed — PDF export unavailable');
-      window._jspdfLoadFailed = true;
-      return;
-    }
+  function loadScript(urls, idx, onDone, onFail) {
+    if(idx >= urls.length) { if(onFail) onFail(); return; }
     const s = document.createElement('script');
     s.src = urls[idx];
     s.crossOrigin = 'anonymous';
-    s.onerror = () => loadJsPDF(urls, idx + 1);
+    s.onload  = () => { if(onDone) onDone(); };
+    s.onerror = () => loadScript(urls, idx+1, onDone, onFail);
     document.head.appendChild(s);
   }
-  loadJsPDF([
+  // Load jsPDF first, then html2canvas
+  loadScript([
     'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js',
     'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
-  ], 0);
+  ], 0,
+  function() {
+    // jsPDF loaded — now load html2canvas
+    loadScript([
+      'https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js',
+      'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'
+    ], 0,
+    function() { window._pdfLibsReady = true; },
+    function() { console.warn('html2canvas: all CDN sources failed'); window._jspdfLoadFailed = true; });
+  },
+  function() { console.warn('jsPDF: all CDN sources failed'); window._jspdfLoadFailed = true; });
 })();
 </script>
 <style>
@@ -8487,7 +8495,8 @@ function buildSpouseProforma(o) {
   // Non-assessable spouse shows no credits; their net IT = proportional share of combined net IT.
   const isJoint = !!o._jointNote;
   const isAssessableSpouseCol = !isJoint || (o.prefix === assessableSpouse);
-  const creditArr=creditStore[o.prefix||'s1']||[];
+  const _bsSnap = (window._lastResult?.creditSnapshot) || creditStore;
+  const creditArr=_bsSnap[o.prefix||'s1']||[];
   const nrArr=creditArr.filter(c=>c.nr&&c.amount>0);
   let totalCreditsApplied = 0;
   if(isAssessableSpouseCol && (nrArr.length||sp.medRelief>0)){
@@ -8633,7 +8642,8 @@ function renderSingleResult(d) {
   const pswtCredit      = d.pswtCredit || 0;
   const sfpCredit       = d.sfpCredit || 0;
   const totalLiability  = d.netIT + d.usc.total + d.prsi + d.cgt.payable + dirtCharge;
-  const refCredits      = (creditStore['s1']||[]).filter(c=>!c.nr).reduce((s,c)=>s+c.amount,0);
+  const _snapS = window._lastResult?.creditSnapshot || creditStore;
+  const refCredits      = (_snapS['s1']||[]).filter(c=>!c.nr).reduce((s,c)=>s+c.amount,0);
   const netLiability    = Math.max(0, totalLiability - refCredits - dwtCredit - pswtCredit - sfpCredit);
   const totalPaid       = d.paidIT + d.paidUSC + d.paidPRSI + d.paidCGT + dirtAlreadyPaid;
   const priorRefund     = d.priorRefund || 0;
@@ -8808,8 +8818,9 @@ function renderJointResult(d) {
   if(highIT>0) rows+=Item('@ 40% on balance',highIT);
   rows+=Sub('Gross Income Tax',stdIT+highIT);
 
-  // Credits — combined from both spouses
-  const allCredits = [...(creditStore['s1']||[]), ...(creditStore['s2']||[])];
+  // Credits — use snapshot captured at compute time (avoids live/computed mismatch)
+  const _snap = window._lastResult?.creditSnapshot || creditStore;
+  const allCredits = [...(_snap['s1']||[]), ...(_snap['s2']||[])];
   const nrCredits  = allCredits.filter(c=>c.nr&&c.amount>0);
   const allCapRes  = {caps:Object.assign({}, (d.capS1||{}).caps, (d.capS2||{}).caps)};
   if(nrCredits.length || d.s1.medRelief>0 || d.s2.medRelief>0){
@@ -9186,765 +9197,200 @@ function downloadPDFForReturn(rid, event) {
 
 function downloadPDF() {
   const r = window._lastResult;
-  if(!r) { alert('Please run a computation first.'); return; }
-  if(window._jspdfLoadFailed || !window.jspdf) {
-    alert('PDF export is unavailable — the jsPDF library could not be loaded.\n\nThis is usually caused by browser tracking prevention blocking the CDN.\n\nTry: Edge/Firefox → Settings → Privacy → turn off Tracking Prevention temporarily, then reload.');
+  if(!r) { alert('Please run a computation first, then download the PDF.'); return; }
+  if(window._jspdfLoadFailed || !window.jspdf || !window.html2canvas) {
+    alert('PDF export is unavailable — required libraries (jsPDF / html2canvas) could not be loaded.\n\nThis is usually caused by browser tracking prevention.\nTry: Settings → Privacy → disable Tracking Prevention, then reload.\n\nOr open in Chrome where this works reliably.');
     return;
   }
-  try {
-  const {jsPDF} = window.jspdf;
-  const doc = new jsPDF({unit:'mm', format:'a4'});
-  const lr = window._lastResult; // declared early — referenced throughout downloadPDF
-  const pdfCreditStore = lr?.creditSnapshot || creditStore; // snapshot taken at compute time
-  const W=210, M=16, CW=178;
-  const today = new Date().toLocaleDateString('en-IE',{day:'numeric',month:'long',year:'numeric'});
 
-  // Rate lookup scoped to THIS return's year (not global currentYear)
-  const Ry = () => RATES[r.yr] || RATES[LATEST_YEAR] || Object.values(RATES)[Object.keys(RATES).length-1];
+  // Show spinner on the PDF button
+  const btn = document.querySelector('button[onclick="downloadPDF()"]');
+  const origText = btn ? btn.textContent : '';
+  if(btn) { btn.textContent = '⏳ Generating…'; btn.disabled = true; }
 
-  // ── Colours ──────────────────────────────────────────────────────────
-  const NAVY   = [28,53,87];
-  const GOLD   = [180,160,80];
-  const LTBLUE = [232,237,244];
-  const GRN    = [22,163,74];
-  const RED    = [220,38,38];
-  const PURPLE = [124,58,237];
-  const TEAL   = [15,118,110];
-  const AMBER  = [180,69,11];
-  const CYAN   = [8,145,178];
-  const WHITE  = [255,255,255];
-  const DARK   = [30,30,30];
-  const MUTED  = [100,105,115];
-  const LBLUE  = [240,245,255];
-
-  // ── Helpers ──────────────────────────────────────────────────────────
-  let y = 0;
-  const e2 = v => '\u20AC' + Math.abs(v).toLocaleString('en-IE',{minimumFractionDigits:2,maximumFractionDigits:2});
-
-  const checkPage = (needed=7) => {
-    if(y + needed > 278) {
-      doc.addPage();
-      y = 16;
-      // Subtle page header
-      doc.setFillColor(...NAVY); doc.rect(0,0,W,10,'F');
-      doc.setTextColor(...WHITE); doc.setFont('helvetica','bold'); doc.setFontSize(7);
-      doc.text('IRISH TAX CONSULTING - CONFIDENTIAL', M, 7);
-      doc.setTextColor(...DARK);
-      y = 16;
-    }
-  };
-
-  const drawPageHeader = (subtitle='Tax Computation') => {
-    doc.setFillColor(...NAVY); doc.rect(0,0,W,26,'F');
-    doc.setFillColor(...GOLD); doc.rect(0,26,W,1.5,'F');
-    doc.setTextColor(...WHITE); doc.setFont('helvetica','bold'); doc.setFontSize(14);
-    doc.text('IRISH TAX CONSULTING', M, 11);
-    doc.setFont('helvetica','normal'); doc.setFontSize(9);
-    doc.text(subtitle, M, 19);
-    doc.text(today, W-M, 19, {align:'right'});
-    doc.setTextColor(...DARK);
-    y = 33;
-  };
-
-  // Draw a section header band
-  const sectionHdr = (title, color=LTBLUE, textColor=NAVY) => {
-    checkPage(8);
-    doc.setFillColor(...color);
-    doc.rect(M, y-3, CW, 7, 'F');
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(8);
-    doc.setTextColor(...textColor);
-    doc.text(title.toUpperCase(), M+3, y+1);
-    doc.setTextColor(...DARK);
-    y += 7;
-  };
-
-  // Draw a normal line item
-  const lineItem = (label, value='', indent=0, bold=false, valColor=null) => {
-    checkPage(6);
-    doc.setFont('helvetica', bold ? 'bold' : 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(...DARK);
-    const labelLines = doc.splitTextToSize(label, CW - 50 - indent);
-    doc.text(labelLines[0] || '', M + indent, y);
-    if(value) {
-      if(valColor) doc.setTextColor(...valColor);
-      doc.text(value, W-M, y, {align:'right'});
-      doc.setTextColor(...DARK);
-    }
-    y += 5.5;
-  };
-
-  // Draw a subtotal line with top rule
-  const subtotal = (label, value, color=NAVY) => {
-    checkPage(8);
-    doc.setDrawColor(180,185,195); doc.setLineWidth(0.2);
-    doc.line(M, y-1, W-M, y-1);
-    doc.setFillColor(...LBLUE);
-    doc.rect(M, y-2, CW, 6.5, 'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
-    doc.setTextColor(...color);
-    doc.text(label, M+3, y+2.5);
-    doc.text(value, W-M-3, y+2.5, {align:'right'});
-    doc.setTextColor(...DARK);
-    y += 8;
-  };
-
-  // Big total band
-  const totalBand = (label, value) => {
-    checkPage(12);
-    doc.setFillColor(...NAVY); doc.rect(M, y-2, CW, 10, 'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(10);
-    doc.setTextColor(...WHITE);
-    doc.text(label, M+4, y+4.5);
-    doc.text(value, W-M-4, y+4.5, {align:'right'});
-    doc.setTextColor(...DARK);
-    y += 13;
-  };
-
-  // Colour aliases for balance band
-  const GRNS=[22,163,74], REDS=[185,28,28];
-
-  // Balance result band (green or red)
-  const balanceBand = (isRefund, amount) => {
-    checkPage(14);
-    const clr = isRefund ? [240,253,244] : [254,242,242];
-    const brd = isRefund ? GRNS : REDS;
-    doc.setFillColor(...clr);
-    doc.rect(M, y-2, CW, 14, 'F');
-    doc.setDrawColor(...(isRefund ? GRNS : REDS));
-    doc.setLineWidth(0.8);
-    doc.line(M, y-2, M, y+12); // left accent bar
-    doc.setLineWidth(0.1);
-    doc.setFont('helvetica','bold'); doc.setFontSize(9);
-    doc.setTextColor(...(isRefund ? GRNS : REDS));
-    doc.text(isRefund ? 'REFUND DUE TO YOU' : 'BALANCE PAYABLE TO REVENUE', M+5, y+4);
-    doc.setFontSize(13);
-    doc.text(amount, W-M-3, y+9, {align:'right'});
-    doc.setTextColor(...DARK);
-    y += 17;
-  };
-
-  // Spouse section header — name, PPS, assessable marker
-  const spouseHdr = (prefix, fallbackLabel, colColor) => {
-    checkPage(12);
-    const spName = (v(prefix+'_fullname')||'').trim() || fallbackLabel;
-    const spPPS  = (v(prefix+'_pps')||'').trim().toUpperCase();
-    const isAssess = prefix === assessableSpouse;
-    doc.setFillColor(...colColor);
-    doc.rect(M, y-2, CW, 11, 'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(11);
-    doc.setTextColor(...WHITE);
-    doc.text(spName, M+4, y+4);
-    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
-    if(spPPS) doc.text(`PPS: ${spPPS}`, M+4, y+9);
-    if(isAssess) {
-      const tag = 'ASSESSABLE SPOUSE';
-      doc.setFillColor(255,220,60); doc.setDrawColor(200,160,0);
-      doc.roundedRect(W-M-38, y+1, 34, 7, 1, 1, 'FD');
-      doc.setTextColor(80,50,0); doc.setFontSize(7); doc.setFont('helvetica','bold');
-      doc.text(tag, W-M-21, y+5.5, {align:'center'});
-    }
-    doc.setTextColor(...DARK);
-    y += 15;
-  };
-
-  // ── Render one spouse's data ─────────────────────────────────────────
-  // renderSpouseSection — uses pre-computed figures from _lastResult; no recalculation
-  // pdfCreditStore declared at top of function (after lr)
-  const renderSpouseSection = (sp, prefix, nrCr, capRes, usc, prsi, prsiResult,
-                                paidIT, paidUSC, paidPRSI, paidCGT,
-                                grossITAmt, netITAmt, cgtData,
-                                totalLiab, balance, isJointNote, itFrac,
-                                isAssessable=true, base=0, bandInc=0, priorRefund=0,
-                                dwtCr=0, pswtCr=0, sfpCr=0) => {
-    // A — Income
-    sectionHdr('A — Income', [235,243,255], NAVY);
-    if(sp.emp>0)     lineItem('Employment / Salary', e2(sp.emp), 3);
-    if(sp.dsp>0)     lineItem('State Pension / DSP Income', e2(sp.dsp), 3);
-    const pdfIsF12 = resolvedFormType() === 'f12';
-    if(!pdfIsF12) {
-      if(sp.se>0)      lineItem('Self-Employed / Trade Income', e2(sp.se), 3);
-      if(sp.dirs>0)    lineItem("Director's Fees", e2(sp.dirs), 3);
-      if(sp.rental>0)  lineItem('Rental Income (net of expenses)', e2(sp.rental), 3);
-      if(sp.foreign>0) lineItem('Foreign Income', e2(sp.foreign), 3);
-      if(sp.divs>0)    lineItem('Irish Dividends (gross — DWT on account)', e2(sp.divs), 3);
-      if(sp.deposit>0) lineItem('Deposit Interest (DIRT @ 33% — final liability)', e2(sp.deposit), 3);
-      if(sp.other>0)   lineItem('Other Taxable Income', e2(sp.other), 3);
-    }
-    // B — Deductions
-    if(sp.totalDeductions>0) {
-      lineItem('', '', 0);
-      lineItem('Less: Allowable Deductions', '', 3, true);
-      if(sp.pension>0)  lineItem('  Pension Contributions',        '('+e2(sp.pension)+')', 6, false, RED);
-      if(sp.flatrate>0) lineItem('  Flat-Rate Employment Expenses','('+e2(sp.flatrate)+')',6, false, RED);
-      if(sp.capallow>0) lineItem('  Capital Allowances',           '('+e2(sp.capallow)+')',6, false, RED);
-      if(sp.rentexp>0)  lineItem('  Rental Expenses',              '('+e2(sp.rentexp)+')', 6, false, RED);
-      if(sp.wfh>0)      lineItem('  Remote Working Relief',        '('+e2(sp.wfh)+')',     6, false, RED);
-      if(sp.losses>0)   lineItem('  Losses Carried Forward',       '('+e2(sp.losses)+')', 6, false, RED);
-      if(sp.otherded>0) lineItem('  Other Deductions',             '('+e2(sp.otherded)+')',6, false, RED);
-      lineItem('Total Deductions', '('+e2(sp.totalDeductions)+')', 3, true, RED);
-    }
-    subtotal('Taxable Income  [ A minus B ]', e2(sp.taxableIncome));
-
-    // C — Income Tax (use passed-in pre-computed values — do NOT recalculate)
-    sectionHdr('C — Income Tax', [255,244,229], AMBER);
-    if(isJointNote) {
-      const bandLabel = isAssessable
-        ? 'Assessable spouse — standard rate band €' + base.toLocaleString()
-        : 'Non-assessable spouse — band €' + bandInc.toLocaleString() + ' (all @ 20%)';
-      lineItem(bandLabel, '', 3, false, CYAN);
-    }
-    const spBand  = isJointNote ? (isAssessable ? base : bandInc) : (base || Ry().bands.single);
-    const stdAmt  = Math.min(sp.taxableIncome, spBand) * 0.20;
-    const highAmt = Math.max(0, sp.taxableIncome - spBand) * 0.40;
-    if(stdAmt > 0)  lineItem('€' + spBand.toLocaleString() + ' @ 20% standard rate', e2(stdAmt), 3);
-    if(highAmt > 0) lineItem('Balance @ 40% higher rate', e2(highAmt), 3);
-    subtotal('Gross Income Tax', e2(grossITAmt));
-
-    // D — Tax Credits
-    const showCredits = !isJointNote || isAssessable;
-    const credits = pdfCreditStore[prefix] || creditStore[prefix] || [];
-    const nrArr   = credits.filter(c => c.nr && c.amount > 0);
-    if(showCredits && (nrArr.length || sp.medRelief > 0)) {
-      sectionHdr('D — Tax Credits', [240,253,244], [21,128,61]);
-      nrArr.forEach(c => {
-        const cap = (capRes && capRes.caps && capRes.caps[c.id]) ? capRes.caps[c.id] : {applied: c.amount};
-        const qty = (c.qty && c.qty > 1) ? ' (x' + c.qty + ')' : '';
-        lineItem(c.label + qty, '('+e2(cap.applied)+')', 3, false, [21,128,61]);
-      });
-      if(sp.medRelief > 0) lineItem('Health / Medical Expenses (20%)', '('+e2(sp.medRelief)+')', 3, false, [21,128,61]);
-    }
-    if(dwtCr > 0 || pswtCr > 0 || sfpCr > 0) {
-      if(!(showCredits && (nrArr.length || sp.medRelief > 0)))
-        sectionHdr('D — Withholding Tax Credits', [240,253,244], [21,128,61]);
-      if(dwtCr > 0)  lineItem('DWT Credit (Dividend Withholding Tax @ 25%)', '('+e2(dwtCr)+')',  3, false, [21,128,61]);
-      if(pswtCr > 0) lineItem('PSWT / RCT Credit (Professional Services)',   '('+e2(pswtCr)+')', 3, false, [21,128,61]);
-      if(sfpCr > 0)  lineItem('S.667D Farm Partnership Credit (€5,000/yr)',  '('+e2(sfpCr)+')',  3, false, [21,128,61]);
-    }
-    subtotal('Net Income Tax', e2(netITAmt));
-
-    // E — USC
-    sectionHdr('E — Universal Social Charge (USC)', [224,247,252], CYAN);
-    if(!usc || usc.bands.length === 0) lineItem('Exempt from USC (income ≤ €13,000)', '€0.00', 3);
-    else usc.bands.forEach(b => lineItem('€' + b.income.toLocaleString() + ' @ ' + (b.rate*100).toFixed(1) + '%', e2(b.charge), 3));
-    subtotal('Total USC', e2(usc ? usc.total : 0));
-
-    // F — PRSI
-    sectionHdr('F — PRSI', [220,252,245], TEAL);
-    if(prsiResult && prsiResult.breakdown) {
-      prsiResult.breakdown.forEach(b => { if(b.charge > 0) lineItem(b.label, e2(b.charge), 3); });
-    } else {
-      lineItem('PRSI', e2(prsi), 3);
-    }
-    subtotal('Total PRSI', e2(prsi));
-
-    // G — CGT
-    if(cgtData && cgtData.payable > 0) {
-      sectionHdr('G — Capital Gains Tax', [245,240,255], PURPLE);
-      (cgtData.results || []).forEach(c => lineItem(c.asset, e2(Math.abs(c.gain)), 3, false, c.isGain ? RED : GRNS));
-      lineItem('Less: Annual CGT Exemption (€1,270)', '('+e2(cgtData.exempt)+')', 3, false, RED);
-      subtotal('CGT @ 33%', e2(cgtData.payable));
-    }
-
-    // Total liability band
-    totalBand('Total Tax Liability for the Year', e2(totalLiab));
-
-    // H — Already Paid
-    sectionHdr('H — Tax Already Paid / Deducted at Source', [240,253,244], [21,128,61]);
-    if(paidIT > 0)   lineItem('Income Tax (PAYE / Preliminary Tax)',    e2(paidIT),   3, false, GRNS);
-    if(paidUSC > 0)  lineItem('USC (deducted at source)',               e2(paidUSC),  3, false, GRNS);
-    if(paidPRSI > 0) lineItem('PRSI (deducted at source)',              e2(paidPRSI), 3, false, GRNS);
-    if(paidCGT > 0)  lineItem('CGT (previously paid)',                  e2(paidCGT),  3, false, GRNS);
-    const dirtPaidAmt = sp.dirtAlreadyPaid || 0;
-    if(dirtPaidAmt > 0) lineItem('DIRT (deducted by bank — final liability)', e2(dirtPaidAmt), 3, false, GRNS);
-    const totalPaidDisp = paidIT + paidUSC + paidPRSI + paidCGT + dirtPaidAmt;
-    subtotal('Total Paid / Deducted', e2(totalPaidDisp), [21,128,61]);
-    if(priorRefund > 0) lineItem('Less: Previously Refunded by Revenue', '('+e2(priorRefund)+')', 3, false, REDS);
-
-    // Balance
-    balanceBand(balance >= 0, e2(Math.abs(balance)));
-  };
-
-  // ════════════════════════════════════════════════════════════════════
-  // PAGE 1 — ADVISORY LETTER (comes first)
-  // ════════════════════════════════════════════════════════════════════
-  const assessLabel = r.type==='joint' ? 'Joint Assessment' :
-                      r.type==='separate' ? 'Separate Assessment' : 'Single / Individual';
-  const ft = resolvedFormType();
-  const isF11 = ft === 'f11';
-  const formLabel = isF11 ? 'Form 11 (ROS)' : 'Form 12 (myAccount)';
-  const filingDeadline = isF11
-    ? `31 October ${r.yr+1} (extended online deadline typically mid-November via ROS)`
-    : `31 December ${r.yr+1} via myAccount`;
-  // lr already declared at top of function
-  const lrBal = lr?.balance ?? 0;
-  const lrLiab = lr?.totalLiability ?? 0;
-  const lrPaid = lr?.totalPaid ?? 0;
-  const isRefund = lrBal >= 0;
-
-  drawPageHeader('Tax Advisory Letter - Confidential');
-
-  // Client address block
-  const addrOneLine = (v('clientAddress')||'').split('\n').map(l=>l.trim()).filter(Boolean).join(', ')||'-';
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...DARK);
-  doc.text(today, M, y); y+=7;
-  const clientAddr = (v('clientAddress')||'').split('\n').map(l=>l.trim()).filter(Boolean);
-  doc.text(r.clientName||'', M, y); y+=5;
-  clientAddr.forEach(l=>{ doc.text(l, M, y); y+=5; });
-  y+=5;
-
-  // RE line
-  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...NAVY);
-  doc.text(`Re: Income Tax Position - Year of Assessment ${r.yr}`, M, y); y+=5;
-  doc.setDrawColor(...NAVY); doc.setLineWidth(0.5); doc.line(M,y,W-M,y); y+=8;
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...DARK);
-
-  // Helper to write a headed paragraph
-  const writePara = (heading, text) => {
-    checkPage(20);
-    if(heading) {
-      doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...NAVY);
-      doc.text(heading, M, y); y+=5;
-      doc.setFont('helvetica','normal'); doc.setTextColor(...DARK);
-    }
-    const lines = doc.splitTextToSize(text, CW);
-    checkPage(lines.length*5.2+4);
-    doc.text(lines, M, y);
-    y += lines.length*5.2 + 5;
-  };
-
-  // ── Opening ──
-  writePara('', `Dear ${r.clientName||'Client'},`);
-  writePara('',
-    `We have completed the review of your income tax, Universal Social Charge (USC), and Pay Related Social Insurance (PRSI) position for the year ended 31 December ${r.yr}. ` +
-    `This letter sets out our findings, your overall tax position, and the actions you are required to take. ` +
-    `The enclosed computation should be read alongside this letter.`
-  );
-
-  // ── Tax Position Summary ──
-  writePara('1.  Tax Position Summary',
-    `Based on the information provided, your total tax liability for ${r.yr} amounts to ${e2(lrLiab)}, ` +
-    `comprising Income Tax, USC, and PRSI as detailed in the enclosed computation. ` +
-    `Taxes already paid during the year through PAYE or preliminary tax total ${e2(lrPaid)}.`
-  );
-  if(isRefund) {
-    writePara('',
-      `Accordingly, you are entitled to a repayment of ${e2(Math.abs(lrBal))} from Revenue. ` +
-      `This refund may be claimed by submitting your ${formLabel} return. ` +
-      `We recommend filing promptly to expedite the repayment.`
-    );
-  } else {
-    writePara('',
-      `Accordingly, a balance of ${e2(Math.abs(lrBal))} remains payable to Revenue. ` +
-      `This must be discharged by 31 October ${r.yr+1}. ` +
-      `Interest accrues on late payments at 0.0219% per day (approximately 8% per annum) from the due date.`
-    );
+  const proforma = document.getElementById('resultsArea');
+  if(!proforma || !proforma.innerHTML.trim()) {
+    alert('No computation result found. Please click ▶ Run Computation first.');
+    if(btn) { btn.textContent = origText; btn.disabled = false; }
+    return;
   }
 
-  // ── Income Analysis ──
-  (() => {
-    let analysisLines = [];
-    if(r.type === 'joint' && lr?.data) {
-      const d = lr.data;
-      const s1n = (v('s1_fullname')||'Spouse 1').trim();
-      const s2n = (v('s2_fullname')||'Spouse 2').trim();
-      const assessName = assessableSpouse==='s1' ? s1n : s2n;
-      const nonAssessName = assessableSpouse==='s1' ? s2n : s1n;
-      analysisLines.push(
-        `Your returns have been prepared on a joint assessment basis. ` +
-        `${assessName} is designated as the assessable spouse and carries the primary tax liability, ` +
-        `including the full married personal tax credit of ${e2(Ry().credits.personal.married)}.`
-      );
-      analysisLines.push(
-        `The combined standard rate band for ${r.yr} is ${e2(d.jointCutOff||0)}, ` +
-        `comprising the base married band of ${e2(d.base||0)} for ${assessName}, ` +
-        `increased by ${e2(d.bandIncrease||0)} in respect of ${nonAssessName}'s income of ${e2(d.s2?.taxableIncome||d.s1?.taxableIncome||0)}.`
-      );
-      const totalInc = d.combinedIncome||1;
-      analysisLines.push(
-        `Combined taxable income is ${e2(totalInc)}, ` +
-        `of which ${e2(d.s1.taxableIncome)} (${(d.s1.taxableIncome/totalInc*100).toFixed(1)}%) is attributable to ${s1n} ` +
-        `and ${e2(d.s2.taxableIncome)} (${(d.s2.taxableIncome/totalInc*100).toFixed(1)}%) to ${s2n}.`
-      );
-    } else if((r.type === 'separate' || r.type === 'single') && lr?.data) {
-      const d = lr.data;
-      analysisLines.push(
-        `Your taxable income for ${r.yr} is ${e2(d.sp?.taxableIncome||0)}, ` +
-        `consisting primarily of employment income. ` +
-        `The standard rate band of ${e2(Ry().bands.single)} applies, ` +
-        `with income above this threshold taxed at the higher rate of 40%.`
-      );
-    }
-    if(analysisLines.length) writePara('2.  Income and Rate Band Analysis', analysisLines.join(' '));
-  })();
+  // ── Build advisory letter page (plain HTML, capture as canvas) ────────
+  const yr       = r.yr || currentYear;
+  const today    = new Date().toLocaleDateString('en-IE',{day:'numeric',month:'long',year:'numeric'});
+  const clientName = v('clientName') || '—';
+  const clientAddr = (v('clientAddress')||'').split('\n').map(l=>l.trim()).filter(Boolean).join(', ') || '—';
+  const ppsNo      = v('ppsNumber') || '—';
+  const fileRef    = v('fileRef')   || '—';
+  const ft         = resolvedFormType();
+  const isF11      = ft === 'f11';
+  const formLabel  = isF11 ? 'Form 11 (ROS — Revenue Online Service)' : 'Form 12 (myAccount)';
+  const deadline   = isF11 ? `31 October ${yr+1} (extended online: mid-November via ROS)` : `31 December ${yr+1} via myAccount`;
+  const lrBal      = r.balance ?? 0;
+  const isRefund   = lrBal >= 0;
+  const balAmt     = Math.abs(lrBal);
+  const balLabel   = isRefund ? 'REFUND DUE' : 'TAX PAYABLE';
+  const e2 = v => '\u20AC' + Math.abs(v||0).toLocaleString('en-IE',{minimumFractionDigits:2,maximumFractionDigits:2});
 
-  // ── Tax Credits ──
-  (() => {
-    const allCredits = [...(creditStore['s1']||[]), ...(creditStore['s2']||[])].filter(c=>c.nr&&c.amount>0);
-    if(!allCredits.length) return;
-    const creditNames = allCredits.map(c=>c.label).join(', ');
-    writePara('3.  Tax Credits Applied',
-      `The following non-refundable tax credits have been applied in computing your liability: ${creditNames}. ` +
-      `These credits directly reduce your Income Tax liability on a euro-for-euro basis. ` +
-      `Please confirm that you continue to qualify for each credit claimed, ` +
-      `as Revenue may request evidence on review.`
-    );
-  })();
+  const letterHtml = `
+  <div style="font-family:'Inter',Arial,sans-serif;font-size:12px;color:#1a1a1a;
+              width:740px;padding:40px 50px;background:#fff;line-height:1.6">
 
-  // ── USC ──
-  (() => {
-    const uscNote = r.type==='joint' && lr?.data
-      ? `USC is assessed independently for each spouse on their own income. ` +
-        `Spouse incomes below ${e2(13000)} are exempt from USC.`
-      : `USC is assessed on your gross income, excluding certain social welfare payments.`;
-    writePara('4.  Universal Social Charge', uscNote);
-  })();
+    <!-- Firm header -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;
+                border-bottom:3px solid #1c3557;padding-bottom:14px;margin-bottom:20px">
+      <div>
+        <div style="font-size:20px;font-weight:800;color:#1c3557;letter-spacing:-0.5px">
+          Irish Tax Consulting
+        </div>
+        <div style="font-size:10px;color:#6b7280;margin-top:3px">
+          Confidential Tax Advisory — Internal Tool
+        </div>
+      </div>
+      <div style="text-align:right;font-size:10px;color:#6b7280">
+        <div>${today}</div>
+        <div style="margin-top:2px">File Ref: <strong>${fileRef}</strong></div>
+        <div>Tax Year: <strong>${yr}</strong></div>
+      </div>
+    </div>
 
-  // ── CGT if applicable ──
-  if(lr?.data?.cgt?.payable > 0 || lr?.cgt?.payable > 0) {
-    const cgtAmt = lr?.data?.cgt?.payable || lr?.cgt?.payable || 0;
-    writePara('5.  Capital Gains Tax',
-      `A Capital Gains Tax liability of ${e2(cgtAmt)} arises for ${r.yr} in respect of asset disposals during the year. ` +
-      `CGT is payable in two tranches: gains on disposals made between 1 January and 30 November are due by 15 December ${r.yr}, ` +
-      `and gains on disposals in December are due by 31 January ${r.yr+1}. ` +
-      `Please retain all records of acquisition costs and disposal proceeds.`
-    );
-  }
+    <!-- Client block -->
+    <div style="background:#f0f5ff;border-left:3px solid #1c3557;padding:12px 16px;
+                margin-bottom:20px;border-radius:0 4px 4px 0">
+      <div style="font-weight:700;font-size:13px;color:#1c3557">${clientName}</div>
+      <div style="font-size:11px;color:#374151;margin-top:3px">${clientAddr}</div>
+      <div style="font-size:11px;color:#6b7280;margin-top:2px">PPS: ${ppsNo}</div>
+    </div>
 
-  // ── Filing Obligations ──
-  const paraNum = (lr?.data?.cgt?.payable > 0) ? '6.' : '5.';
-  writePara(`${paraNum}  Filing Obligations and Deadlines`,
-    `Your return for ${r.yr} must be filed using ${formLabel} by ${filingDeadline}. ` +
-    (isF11
-      ? `As a self-assessed taxpayer, preliminary tax for ${r.yr+1} is also due on 31 October ${r.yr+1}. ` +
-        `Preliminary tax must be at least 90% of your final ${r.yr+1} liability, or 100% of your ${r.yr} liability, whichever is the lower.`
-      : `As a PAYE taxpayer, you are not required to pay preliminary tax. ` +
-        `Your employer deducts tax at source under the PAYE system, and any balance or refund is resolved through the annual return.`)
-  );
+    <div style="font-weight:700;font-size:13px;margin-bottom:8px">
+      RE: Income Tax Return — Tax Year ${yr} (${formLabel})
+    </div>
 
-  // ── Record Keeping ──
-  writePara(`${String(parseInt(paraNum)+1)}.  Record Keeping`,
-    `You are required to retain all books, records, and supporting documentation for a minimum of six years. ` +
-    `This includes P60s, payslips, bank statements, receipts for claimed expenses, and any correspondence with Revenue. ` +
-    `Revenue may raise an enquiry or conduct an audit at any time within this period.`
-  );
+    <p style="margin:0 0 12px">Dear ${clientName},</p>
+    <p style="margin:0 0 12px">
+      We have prepared your income tax return for the year ended 31 December ${yr}.
+      The full computation is set out overleaf. Please review the figures carefully
+      and confirm they are complete and accurate before filing.
+    </p>
 
-  // ── Closing ──
-  y += 4;
-  writePara('',
-    `Should you have any queries arising from the enclosed computation, please do not hesitate to contact this office. ` +
-    `We recommend reviewing all figures carefully against your own records before making any submission to Revenue.`
-  );
-  y += 4;
-  doc.text('Yours sincerely,', M, y); y+=9;
-  doc.setFont('helvetica','bold');
-  doc.text('Irish Tax Consulting', M, y); y+=5;
-  doc.setFont('helvetica','normal');
-  doc.text(v('preparedBy')||'Tax Adviser', M, y); y+=18;
+    <!-- Balance box -->
+    <div style="background:${isRefund?'#f0fdf4':'#fff0f0'};border:2px solid ${isRefund?'#16a34a':'#dc2626'};
+                border-radius:6px;padding:14px 20px;margin:16px 0;display:flex;
+                justify-content:space-between;align-items:center">
+      <div style="font-size:13px;font-weight:700;color:${isRefund?'#15803d':'#dc2626'}">${balLabel}</div>
+      <div style="font-size:20px;font-weight:800;font-family:'Courier New',monospace;
+                  color:${isRefund?'#15803d':'#dc2626'}">${e2(balAmt)}</div>
+    </div>
 
-  // Disclaimer box
-  checkPage(25);
-  doc.setFillColor(245,245,243); doc.rect(M, y, CW, 22, 'F');
-  doc.setDrawColor(...NAVY); doc.setLineWidth(0.3); doc.rect(M, y, CW, 22, 'S');
-  doc.setFontSize(7); doc.setTextColor(100,100,100);
-  doc.text(
-    'DISCLAIMER: This letter and the enclosed computation are prepared solely for the named client on the basis of information provided. ' +
-    'They do not constitute formal tax advice and should not be relied upon by any third party. ' +
-    'Irish Tax Consulting accepts no liability for decisions taken without independent verification. ' +
-    'All rates and bands are sourced from Revenue.ie and Finance Acts 2022-2026.',
-    M+2, y+5, {maxWidth:CW-4}
-  );
-
-  // ════════════════════════════════════════════════════════════════════
-  // PAGE 2 — Cover sheet + client details
-  // ════════════════════════════════════════════════════════════════════
-  doc.addPage();
-  const dobRaw = v('dob');
-  const dobFmt = dobRaw ? new Date(dobRaw).toLocaleDateString('en-IE',{day:'numeric',month:'long',year:'numeric'}) : '-';
-  drawPageHeader(`Tax Computation - Year of Assessment ${r.yr}  |  ${assessLabel}`);
-  const fields = [
-    ['Full Name', v('clientName')||'-'], ['PPS Number', v('ppsNumber')||'-'],
-    ['Date of Birth', dobFmt],           ['Address', addrOneLine],
-    ['File Reference', v('fileRef')||'-'],['Prepared By', v('preparedBy')||'-'],
-    ['Assessment Mode', assessLabel],    ['Tax Year', String(r.yr)],
-  ];
-  doc.setFillColor(245,246,250);
-  doc.rect(M, y-3, CW, Math.ceil(fields.length/2)*7+2, 'F');
-  doc.setDrawColor(...NAVY); doc.setLineWidth(0.2);
-  doc.rect(M, y-3, CW, Math.ceil(fields.length/2)*7+2, 'S');
-  fields.forEach(([lbl,val],i) => {
-    const col=i%2, row=Math.floor(i/2);
-    const cx=M+3+col*(CW/2), cy=y+row*7;
-    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...NAVY);
-    doc.text(lbl+':', cx, cy);
-    doc.setFont('helvetica','normal'); doc.setTextColor(...DARK);
-    doc.text(String(val).substring(0,36), cx+28, cy);
-  });
-  y += Math.ceil(fields.length/2)*7 + 5;
-  doc.setDrawColor(...NAVY); doc.setLineWidth(0.5);
-  doc.line(M,y,W-M,y); y+=8;
-
-  // ════════════════════════════════════════════════════════════════════
-  // COMPUTATION PAGES — per assessment type
-  // ════════════════════════════════════════════════════════════════════
-
-  if(r.type === 'single') {
-    // ── Single ────────────────────────────────────────────────────────
-    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...NAVY);
-    doc.text('Individual Tax Computation', M, y); y+=8;
-    doc.setTextColor(...DARK);
-    const d = lr.data;
-    // Use stored resolved figures — these match the proforma exactly
-    const singleBand     = Ry().bands.single;
-    const singleGrossIT  = d.it ? d.it.gross : (Math.min(d.sp.taxableIncome, singleBand)*0.20 + Math.max(0,d.sp.taxableIncome-singleBand)*0.40);
-    const totalLiab      = d.netLiability || (d.netIT + (d.usc?.total||0) + d.prsi + (d.cgt?.payable||0));
-    const priorRefundSingle = lr.priorRefund || 0;
-    const totalPaidSingle   = d.paidIT + d.paidUSC + d.paidPRSI + (d.paidCGT||0) + (d.sp?.dirtAlreadyPaid||0);
-    const bal = lr.balance ?? (totalPaidSingle - priorRefundSingle - totalLiab);
-    const dwtCrS  = d.dwtCredit  || 0;
-    const pswtCrS = d.pswtCredit || 0;
-    const sfpCrS  = d.sfpCredit  || 0;
-    renderSpouseSection(d.sp, 's1', d.nrCredits, d.capRes,
-      d.usc, d.prsi, d.prsiResult,
-      d.paidIT, d.paidUSC, d.paidPRSI, d.paidCGT||0,
-      singleGrossIT, d.netIT, d.cgt, totalLiab, bal, false, 1,
-      true, singleBand, 0, priorRefundSingle, dwtCrS, pswtCrS, sfpCrS);
-
-  } else if(r.type === 'joint') {
-    // ── Joint — two spouse sections with combined total between them
-    const d = lr.data || {};
-    if(!d.s1) { doc.text('No data - please re-run computation.', M, y); }
-    else {
-      const totalInc = d.combinedIncome || 1;
-      const s1Frac = d.s1.taxableIncome / totalInc;
-      const s2Frac = d.s2.taxableIncome / totalInc;
-
-      // Correct per-spouse gross IT using assessIsTaxed logic (mirrors renderJointResult)
-      const pdfAssessIsTaxed = (sp, isAssessable, base, bandInc) => {
-        const spBand = isAssessable ? base : bandInc;
-        const spStd  = Math.min(sp.taxableIncome, spBand) * 0.20;
-        const spHigh = Math.max(0, sp.taxableIncome - spBand) * 0.40;
-        return { std: spStd, high: spHigh, gross: spStd + spHigh };
-      };
-      const s1IsAssessable = assessableSpouse === 's1';
-      const itS1 = pdfAssessIsTaxed(d.s1, s1IsAssessable, d.base, d.bandIncrease);
-      const itS2 = pdfAssessIsTaxed(d.s2, !s1IsAssessable, d.base, d.bandIncrease);
-
-      // Net IT = proportional share of combined net IT (credits pooled)
-      const s1NetIT = d.netIT * s1Frac;
-      const s2NetIT = d.netIT * s2Frac;
-
-      const s1Liab = s1NetIT + d.usc1.total + d.prsi1;
-      const s2Liab = s2NetIT + d.usc2.total + d.prsi2 + d.cgt.payable;
-      const s1Paid = (d.s1PaidIT||0)+(d.s1PaidUSC||0)+(d.s1PaidPRSI||0);
-      const s2Paid = (d.s2PaidIT||0)+(d.s2PaidUSC||0)+(d.s2PaidPRSI||0)+(d.paidCGT||0);
-      const priorRef = lr.priorRefund || 0;
-      // Allocate prior refund proportionally by paid amount for per-spouse display
-      const totalPaidBoth = s1Paid + s2Paid || 1;
-      const s1PriorRef = priorRef * (s1Paid / totalPaidBoth);
-      const s2PriorRef = priorRef * (s2Paid / totalPaidBoth);
-      const s1Bal  = s1Paid - s1PriorRef - s1Liab;
-      const s2Bal  = s2Paid - s2PriorRef - s2Liab;
-
-      // Joint assessment note bar
-      doc.setFillColor(...LBLUE); doc.rect(M, y-2, CW, 9, 'F');
-      doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(...NAVY);
-      doc.text(`Joint assessment - combined standard rate band ${e2(d.jointCutOff||0)} | Income Tax assessed on combined income of ${e2(d.combinedIncome||0)}`, M+3, y+4);
-      doc.setTextColor(...DARK); y += 12;
-
-      // ── Spouse 1 ──
-      spouseHdr('s1', 'Spouse 1', NAVY);
-      renderSpouseSection(d.s1, 's1', d.nrS1, d.capS1,
-        d.usc1, d.prsi1, d.prsiResult1,
-        d.s1PaidIT||0, d.s1PaidUSC||0, d.s1PaidPRSI||0, 0,
-        itS1.gross, s1NetIT, null, s1Liab, s1Bal, true, s1Frac,
-        s1IsAssessable, d.base, d.bandIncrease, s1PriorRef,
-        d.dwtCredit1||0, d.pswtCredit1||0, d.sfpCredit1||0);
-
-      // ── Spouse 2 — new page ──
-      checkPage(999);
-      spouseHdr('s2', 'Spouse 2', [88,28,135]);
-      renderSpouseSection(d.s2, 's2', d.nrS2, d.capS2,
-        d.usc2, d.prsi2, d.prsiResult2,
-        d.s2PaidIT||0, d.s2PaidUSC||0, d.s2PaidPRSI||0, d.paidCGT||0,
-        itS2.gross, s2NetIT, d.cgt, s2Liab, s2Bal, true, s2Frac,
-        !s1IsAssessable, d.base, d.bandIncrease, s2PriorRef,
-        d.dwtCredit2||0, d.pswtCredit2||0, d.sfpCredit2||0);
-
-      // ── Combined total band ──
-      checkPage(30);
-      y += 4;
-      doc.setFillColor(...NAVY); doc.rect(M, y-2, CW, 8, 'F');
-      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...WHITE);
-      doc.text('COMBINED POSITION - BOTH SPOUSES', M+4, y+3.5);
-      doc.setTextColor(...DARK); y += 11;
-
-      // Use stored resolved figures from _lastResult — avoids rounding/credit divergence
-      const totalLiab  = lr.totalLiability || (s1Liab + s2Liab);
-      const totalPaidC = s1Paid + s2Paid;
-      const overallBal = lr.balance ?? (totalPaidC - priorRef - totalLiab);
-      const isRefund   = overallBal >= 0;
-
-      // Three-column combined row
-      const cw3 = CW / 3;
-      [['Total Tax Liability', e2(totalLiab), NAVY],
-       ['Total Paid / Credited', e2(totalPaidC), [21,128,61]],
-       [isRefund ? 'Total Refund Due' : 'Total Balance Payable', e2(Math.abs(overallBal)), isRefund ? GRNS : REDS]
-      ].forEach(([lbl, val, clr], i) => {
-        const cx = M + i * cw3;
-        const bg = i === 2 ? (isRefund ? [240,253,244] : [254,242,242]) : [245,247,252];
-        doc.setFillColor(...bg); doc.rect(cx, y-2, cw3-1, 14, 'F');
-        doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...clr);
-        doc.text(lbl.toUpperCase(), cx+3, y+2.5);
-        doc.setFontSize(11);
-        doc.text(val, cx + cw3 - 4, y+10, {align:'right'});
-      });
-      doc.setTextColor(...DARK); y += 18;
-    }
-
-  } else if(r.type === 'separate') {
-    // ── Separate — each spouse is fully independent
-    const results = lr.results || [];
-    const cgt     = lr.cgt || {payable:0, results:[], exempt:0, taxable:0};
-    results.forEach((res, ri) => {
-      if(ri > 0) checkPage(999); // force new page for 2nd spouse
-      const spBandSep = assessMode === 'treatment' ? Ry().bands.single : Ry().bands.married1 / 2;
-      const spStdSep  = Math.min(res.sp.taxableIncome, spBandSep) * 0.20;
-      const spHighSep = Math.max(0, res.sp.taxableIncome - spBandSep) * 0.40;
-      const spGrossIT = spStdSep + spHighSep;
-      const spLiab = res.netIT + res.usc.total + res.prsi + (ri===results.length-1 ? cgt.payable : 0);
-      const spPaid = res.paidIT + res.paidUSC + res.paidPRSI;
-      const spPriorRef = res.priorRefund || 0;
-      const spBal  = spPaid - spPriorRef - spLiab;
-      spouseHdr(res.prefix, res.label, ri===0 ? NAVY : [88,28,135]);
-      renderSpouseSection(res.sp, res.prefix, res.nrCr, res.capRes,
-        res.usc, res.prsi, res.prsiResult,
-        res.paidIT, res.paidUSC, res.paidPRSI, 0,
-        spGrossIT, res.netIT, ri===results.length-1 ? cgt : null,
-        spLiab, spBal, false, 1, true, spBandSep, 0, spPriorRef,
-        res.dwtCredit||0, res.pswtCredit||0, res.sfpCredit||0);
-    });
-
-    // Combined total for separate assessment
-    const sepTotalLiab = results.reduce((s,res)=>s+res.netIT+res.usc.total+res.prsi,0) + cgt.payable;
-    const sepTotalPaid = results.reduce((s,res)=>s+res.paidIT+res.paidUSC+res.paidPRSI,0);
-    const sepPriorRef  = lr.priorRefund || 0;
-    const sepOverall   = sepTotalPaid - sepPriorRef - sepTotalLiab;
-    const sepIsRef     = sepOverall >= 0;
-    checkPage(30); y += 4;
-    doc.setFillColor(...NAVY); doc.rect(M, y-2, CW, 8, 'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...WHITE);
-    doc.text('COMBINED POSITION - BOTH SPOUSES', M+4, y+3.5);
-    doc.setTextColor(...DARK); y += 11;
-    const cw3s = CW / 3;
-    [[`Total Liability`, e2(sepTotalLiab), NAVY],
-     [`Total Paid`, e2(sepTotalPaid), [21,128,61]],
-     [sepIsRef ? `Total Refund Due` : `Total Balance Payable`, e2(Math.abs(sepOverall)), sepIsRef ? GRNS : REDS]
-    ].forEach(([lbl, val, clr], i) => {
-      const cx = M + i * cw3s;
-      const bg = i === 2 ? (sepIsRef ? [240,253,244] : [254,242,242]) : [245,247,252];
-      doc.setFillColor(...bg); doc.rect(cx, y-2, cw3s-1, 14, 'F');
-      doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...clr);
-      doc.text(lbl.toUpperCase(), cx+3, y+2.5);
-      doc.setFontSize(11); doc.text(val, cx + cw3s - 4, y+10, {align:'right'});
-    });
-    doc.setTextColor(...DARK); y += 18;
-  }
-
-  // ════════════════════════════════════════════════════════════════════
-  // SUMMARY PAGE — breakdown table
-  // ════════════════════════════════════════════════════════════════════
-  doc.addPage();
-  drawPageHeader('Summary - Charged vs Paid vs Net Position');
-
-  // Summary table header
-  doc.setFillColor(...NAVY); doc.rect(M, y-2, CW, 8, 'F');
-  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...WHITE);
-  const col1=M+3, col2=M+70, col3=M+105, col4=M+138, col5=W-M-3;
-  doc.text('Tax Type', col1, y+3.5);
-  doc.text('Spouse / Taxpayer', col2, y+3.5);
-  doc.text('Charged', col3, y+3.5, {align:'right'});
-  doc.text('Paid', col4, y+3.5, {align:'right'});
-  doc.text('Refund / Balance', col5, y+3.5, {align:'right'});
-  doc.setTextColor(...DARK); y+=10;
-
-  const TAX_TYPES = [
-    {icon:'IT', name:'Income Tax', cKey:'netIT', pKey:'paidIT'},
-    {icon:'USC', name:'USC', cKey:'uscTotal', pKey:'paidUSC'},
-    {icon:'PRSI', name:'PRSI', cKey:'prsi', pKey:'paidPRSI'},
-    {icon:'CGT', name:'CGT', cKey:'cgtShare', pKey:'paidCGT'},
-  ];
-
-  // Build spouses list from _lastResult
-  let spouses = [];
-  if(r.type==='single' && lr.data) {
-    const d=lr.data;
-    spouses=[{label:'Taxpayer', netIT:d.netIT, uscTotal:d.usc.total, prsi:d.prsi, cgtShare:d.cgt.payable, paidIT:d.paidIT, paidUSC:d.paidUSC, paidPRSI:d.paidPRSI, paidCGT:d.paidCGT}];
-  } else if(r.type==='joint' && lr.data) {
-    const d=lr.data; const ti=d.combinedIncome||1;
-    const s1FracS = d.s1.taxableIncome/ti, s2FracS = d.s2.taxableIncome/ti;
-    spouses=[
-      {label:'Spouse 1', netIT:d.netIT*s1FracS, uscTotal:d.usc1.total, prsi:d.prsi1, cgtShare:0,        paidIT:d.s1PaidIT||0, paidUSC:d.s1PaidUSC||0, paidPRSI:d.s1PaidPRSI||0, paidCGT:0},
-      {label:'Spouse 2', netIT:d.netIT*s2FracS, uscTotal:d.usc2.total, prsi:d.prsi2, cgtShare:d.cgt.payable, paidIT:d.s2PaidIT||0, paidUSC:d.s2PaidUSC||0, paidPRSI:d.s2PaidPRSI||0, paidCGT:d.paidCGT||0}
-    ];
-  } else if(r.type==='separate' && lr.results) {
-    spouses = lr.results.map((res,ri)=>({label:res.label, netIT:res.netIT, uscTotal:res.usc.total, prsi:res.prsi, cgtShare:ri===lr.results.length-1?(lr.cgt||{}).payable||0:0, paidIT:res.paidIT, paidUSC:res.paidUSC, paidPRSI:res.paidPRSI, paidCGT:0}));
-  }
-
-  let grandC=0, grandP=0;
-  let row_y = y;
-  TAX_TYPES.forEach(t => {
-    const anyData = spouses.some(sp=>(sp[t.cKey]||0)>0||(sp[t.pKey]||0)>0);
-    if(!anyData) return;
-    const firstY = row_y;
-    spouses.forEach((sp, si) => {
-      const charged = sp[t.cKey]||0, paid = sp[t.pKey]||0;
-      if(charged===0 && paid===0) return;
-      grandC += charged; grandP += paid;
-      const net = paid - charged;
-      const isRef = net >= 0;
-      checkPage(7);
-      if(si===0) {
-        doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...NAVY);
-        doc.text(t.name, col1, row_y);
+    <p style="margin:0 0 8px;font-size:11px;color:#374151">
+      ${isRefund
+        ? `A refund of <strong>${e2(balAmt)}</strong> is due to you from Revenue. This will be credited to your bank account following submission and processing of your return.`
+        : `A balance of <strong>${e2(balAmt)}</strong> is payable to Revenue by <strong>${deadline}</strong>. Payment can be made via ROS or myAccount.`
       }
-      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...DARK);
-      doc.text(sp.label, col2, row_y);
-      doc.text(e2(charged), col3, row_y, {align:'right'});
-      doc.text(paid>0?e2(paid):'-', col4, row_y, {align:'right'});
-      doc.setTextColor(...(isRef ? GRNS : REDS));
-      doc.setFont('helvetica','bold');
-      doc.text((isRef ? 'Refund ' : 'Balance ') + e2(Math.abs(net)), col5, row_y, {align:'right'});
-      doc.setTextColor(...DARK);
-      row_y += 6;
+    </p>
+
+    <p style="margin:12px 0 8px;font-size:11px;color:#374151">
+      <strong>Filing deadline:</strong> ${deadline}
+    </p>
+
+    <p style="margin:12px 0 8px;font-size:11px;color:#374151">
+      If you have any queries on the enclosed computation, please do not hesitate to contact us.
+    </p>
+
+    <p style="margin:16px 0 4px;font-size:11px">Yours sincerely,</p>
+    <div style="margin-top:30px;border-top:1px solid #d1d5db;padding-top:8px;
+                font-size:10px;color:#9ca3af">
+      Irish Tax Consulting · Confidential · For addressee only ·
+      This computation is prepared for advisory purposes only.
+      Verify all figures against your Revenue myAccount records before filing.
+    </div>
+  </div>`;
+
+  // Create off-screen letter container
+  const letterDiv = document.createElement('div');
+  letterDiv.style.cssText = 'position:absolute;left:-9999px;top:0;background:#fff';
+  letterDiv.innerHTML = letterHtml;
+  document.body.appendChild(letterDiv);
+
+  const { jsPDF } = window.jspdf;
+  const A4W = 210, A4H = 297;
+
+  // Capture letter page
+  html2canvas(letterDiv, {
+    scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff',
+    width: 740, windowWidth: 840
+  }).then(letterCanvas => {
+    document.body.removeChild(letterDiv);
+
+    const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const M = 0; // no margin — html already has padding
+    const imgW = A4W;
+    const imgH = letterCanvas.height * (A4W / letterCanvas.width);
+
+    // Page 1: advisory letter
+    doc.addImage(letterCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', M, M, imgW, Math.min(imgH, A4H));
+
+    // Pages 2+: proforma (capture each section)
+    // Temporarily widen proforma for print fidelity
+    const origStyle = proforma.getAttribute('style') || '';
+    proforma.style.width = '740px';
+    proforma.style.maxWidth = '740px';
+    proforma.style.fontSize = '11px';
+
+    html2canvas(proforma, {
+      scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff',
+      width: 740, windowWidth: 840, scrollX: 0, scrollY: 0,
+      onclone: (clonedDoc) => {
+        // Remove interactive elements from the clone
+        clonedDoc.querySelectorAll('button, input[type=number], input[type=text], select, .calc-expander').forEach(el => {
+          if(el.tagName === 'INPUT' || el.tagName === 'SELECT') {
+            const span = clonedDoc.createElement('span');
+            span.textContent = el.value || el.textContent;
+            span.style.cssText = 'font-weight:600;';
+            el.parentNode.replaceChild(span, el);
+          } else if(el.classList.contains('calc-expander')) {
+            el.style.display = 'none';
+          } else {
+            el.style.display = 'none';
+          }
+        });
+      }
+    }).then(proformaCanvas => {
+      // Restore proforma style
+      proforma.setAttribute('style', origStyle);
+
+      const pfImgH = proformaCanvas.height * (A4W / proformaCanvas.width);
+      const pagesNeeded = Math.ceil(pfImgH / A4H);
+      const sliceH = proformaCanvas.height / pagesNeeded;
+
+      for(let p = 0; p < pagesNeeded; p++) {
+        doc.addPage();
+        // Slice the canvas vertically for each page
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = proformaCanvas.width;
+        sliceCanvas.height = Math.min(sliceH, proformaCanvas.height - p * sliceH);
+        const ctx = sliceCanvas.getContext('2d');
+        ctx.drawImage(proformaCanvas, 0, p * sliceH, sliceCanvas.width, sliceCanvas.height, 0, 0, sliceCanvas.width, sliceCanvas.height);
+        const sliceImgH = sliceCanvas.height * (A4W / sliceCanvas.width);
+        doc.addImage(sliceCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, A4W, sliceImgH);
+      }
+
+      // File name
+      const safeName = (v('clientName')||'client').replace(/[^a-zA-Z0-9]/g,'-').toLowerCase();
+      doc.save(`itc-${safeName}-${yr}-${resolvedFormType().toUpperCase()}.pdf`);
+
+      if(btn) { btn.textContent = origText; btn.disabled = false; }
+    }).catch(err => {
+      proforma.setAttribute('style', origStyle);
+      if(btn) { btn.textContent = origText; btn.disabled = false; }
+      alert('PDF generation failed (proforma capture): ' + err.message);
     });
-    // Divider between tax types
-    doc.setDrawColor(220,225,235); doc.setLineWidth(0.1);
-    doc.line(M, row_y, W-M, row_y);
-    row_y += 2;
+
+  }).catch(err => {
+    document.body.removeChild(letterDiv);
+    if(btn) { btn.textContent = origText; btn.disabled = false; }
+    alert('PDF generation failed (letter capture): ' + err.message);
   });
-  y = row_y + 3;
-
-  // Grand total row
-  const grandNet = grandP - grandC;
-  doc.setFillColor(...NAVY); doc.rect(M, y-2, CW, 8, 'F');
-  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...WHITE);
-  doc.text('GRAND TOTAL', col1, y+3.5);
-  doc.text(e2(grandC), col3, y+3.5, {align:'right'});
-  doc.text(e2(grandP), col4, y+3.5, {align:'right'});
-  doc.setTextColor(...(grandNet>=0?[134,239,172]:[252,165,165]));
-  doc.text((grandNet>=0?'Refund ':'Balance ') + e2(Math.abs(grandNet)), col5, y+3.5, {align:'right'});
-  doc.setTextColor(...DARK); y += 12;
-
-  // Final result box
-  balanceBand(window._lastResult.balance >= 0, e2(Math.abs(window._lastResult.balance||0)));
-
-  doc.save(`TaxComp_${(r.clientName||'Client').replace(/\s+/g,'_')}_${r.yr}.pdf`);
-  } catch(pdfErr) {
-    console.error('PDF generation error:', pdfErr);
-    alert('PDF error: ' + pdfErr.message + '\n\nSee browser console (F12) for details.');
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
