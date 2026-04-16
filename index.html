@@ -7,34 +7,49 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,300;0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <script>
-// PDF libraries — loaded with CDN fallback chain to handle tracking prevention
+// PDF libraries — loaded with CDN fallback chain with error handling
 (function() {
+  window._pdfLibsReady = false;
+  window._pdfLibsError = null;
   function loadScript(urls, idx, onDone, onFail) {
     if(idx >= urls.length) { if(onFail) onFail(); return; }
     const s = document.createElement('script');
-    s.src = urls[idx];
-    s.crossOrigin = 'anonymous';
-    s.onload  = () => { if(onDone) onDone(); };
+    s.src = urls[idx]; s.crossOrigin = 'anonymous';
+    s.onload = () => { if(onDone) onDone(); };
     s.onerror = () => loadScript(urls, idx+1, onDone, onFail);
     document.head.appendChild(s);
   }
-  // Load jsPDF first, then html2canvas
   loadScript([
     'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js',
     'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
   ], 0,
   function() {
-    // jsPDF loaded — now load html2canvas
     loadScript([
       'https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js',
       'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',
       'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'
     ], 0,
-    function() { window._pdfLibsReady = true; },
-    function() { console.warn('html2canvas: all CDN sources failed'); window._jspdfLoadFailed = true; });
+    function() { window._pdfLibsReady = true; const b=document.getElementById('pdf-error-banner'); if(b) b.remove(); },
+    function() {
+      window._pdfLibsError = 'html2canvas loading failed';
+      console.error(window._pdfLibsError);
+      _showPdfErrBanner('html2canvas could not be loaded — PDF export unavailable. Check internet connection.');
+    });
   },
-  function() { console.warn('jsPDF: all CDN sources failed'); window._jspdfLoadFailed = true; });
+  function() {
+    window._pdfLibsError = 'jsPDF loading failed';
+    console.error(window._pdfLibsError);
+    _showPdfErrBanner('jsPDF could not be loaded — PDF export unavailable. Check internet connection.');
+  });
+  function _showPdfErrBanner(msg) {
+    if(document.getElementById('pdf-error-banner')) return;
+    const d = document.createElement('div');
+    d.id = 'pdf-error-banner';
+    d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#fef2f2;border-bottom:2px solid #dc2626;padding:10px 20px;color:#b91c1c;font-weight:600;font-size:13px;';
+    d.innerHTML = '⚠️ PDF export unavailable — ' + msg + ' <button onclick="this.parentNode.remove()" style="margin-left:12px;background:none;border:none;cursor:pointer;font-size:14px;color:#b91c1c">✕</button>';
+    document.body && document.body.appendChild(d);
+  }
 })();
 </script>
 <style>
@@ -9588,6 +9603,109 @@ function initYearSelector() {
   ).join('');
   currentYear = DEFAULT_YEAR;
 }
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FIX 2: INPUT VALIDATION HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+function validateIncome(amount) {
+  const num = parseFloat(amount) || 0;
+  if(isNaN(num) || num < 0) return { valid:false, sanitized:0 };
+  if(num > 10000000) return { valid:false, sanitized:0 };
+  return { valid:true, sanitized:num };
+}
+function validateCreditAmt(amount, maxCap) {
+  const num = parseFloat(amount) || 0;
+  if(isNaN(num) || num < 0) return { valid:false, sanitized:0 };
+  return { valid:true, sanitized:maxCap > 0 ? Math.min(num, maxCap) : num };
+}
+function safeCompute(fn) {
+  try {
+    const r = fn();
+    return (isNaN(r)||!isFinite(r)) ? { result:0, error:'Invalid result' } : { result:r, error:null };
+  } catch(e) { console.error('Compute error:', e); return { result:0, error:e.message }; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FIX 3: AUDIT LOGGING
+// ═══════════════════════════════════════════════════════════════════════════
+const AuditLog = {
+  log(action, clientId, field, oldValue, newValue, notes='') {
+    const entry = {
+      timestamp: new Date().toISOString(), action, clientId:clientId||'system',
+      field, oldValue:String(oldValue??'N/A'), newValue:String(newValue??'N/A'), notes
+    };
+    try {
+      let logs = JSON.parse(localStorage.getItem('itc_audit_log')||'[]');
+      logs.push(entry);
+      if(logs.length > 1000) logs = logs.slice(-1000);
+      localStorage.setItem('itc_audit_log', JSON.stringify(logs));
+    } catch(e) { /* storage full */ }
+    console.log('[AUDIT]', action, field, oldValue, '->', newValue);
+    return entry;
+  },
+  exportCSV() {
+    const logs = JSON.parse(localStorage.getItem('itc_audit_log')||'[]');
+    if(!logs.length) { alert('No audit log entries'); return; }
+    let csv = 'Timestamp,Action,ClientID,Field,OldValue,NewValue,Notes\n';
+    logs.forEach(l => { csv += '"'+l.timestamp+'","'+l.action+'","'+l.clientId+'","'+l.field+'","'+l.oldValue+'","'+l.newValue+'","'+l.notes+'"\n'; });
+    a.click();
+  },
+  getRecent(limit=50) {
+    return JSON.parse(localStorage.getItem('itc_audit_log')||'[]').slice(-limit).reverse();
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FIX 4: DATA ENCRYPTION (XOR + Base64 — lightweight PII protection)
+// ═══════════════════════════════════════════════════════════════════════════
+const DataEncryption = {
+  _key: 'irelandtax2024',
+  encrypt(text) {
+    if(!text) return '';
+    const k = this._key;
+    let out = '';
+    for(let i=0;i<text.length;i++) out += String.fromCharCode(text.charCodeAt(i) ^ k.charCodeAt(i%k.length));
+    return btoa(out);
+  },
+  decrypt(enc) {
+    if(!enc) return '';
+    try {
+      const k = this._key;
+      const text = atob(enc);
+      let out = '';
+      for(let i=0;i<text.length;i++) out += String.fromCharCode(text.charCodeAt(i) ^ k.charCodeAt(i%k.length));
+      return out;
+    } catch(e) { return ''; }
+  },
+  encryptClient(c) {
+    if(!c) return null;
+    return {...c, pps:this.encrypt(c.pps||''), dob:this.encrypt(c.dob||''), phone:this.encrypt(c.phone||'')};
+  },
+  decryptClient(c) {
+    if(!c) return null;
+    return {...c, pps:this.decrypt(c.pps||''), dob:this.decrypt(c.dob||''), phone:this.decrypt(c.phone||'')};
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FIX 5: PII MASKING — safe for screen sharing
+// ═══════════════════════════════════════════════════════════════════════════
+const PiiMasking = {
+  enabled: localStorage.getItem('itc_pii_masking') === 'true',
+  maskPPS(v)     { return this.enabled && v ? v.substring(0,3)+'****'+v.slice(-2) : v; },
+  maskDOB(v)     { return this.enabled && v ? v.substring(0,5)+'XXXX' : v; },
+  maskPhone(v)   { return this.enabled && v ? '*'.repeat(Math.max(0,v.length-4))+v.slice(-4) : v; },
+  maskAddress(v) { return this.enabled && v ? '[Address masked]' : v; },
+  toggle() {
+    this.enabled = !this.enabled;
+    localStorage.setItem('itc_pii_masking', this.enabled);
+    return this.enabled;
+  }
+};
+window.piiMaskingEnabled = PiiMasking.enabled;
+
+console.log('ITC: Validation, AuditLog, DataEncryption, PiiMasking loaded.');
 
 window.onload = function() {
   initYearSelector(); // populate year selector from RATES — no hardcoding needed
