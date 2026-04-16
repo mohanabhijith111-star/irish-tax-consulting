@@ -1550,7 +1550,7 @@ input,select,button,textarea{font-family:inherit}
         <span id="assessableSpouseBadge" style="font-size:10px;font-weight:600;background:var(--accent-lt);color:var(--accent);border:1px solid rgba(28,53,87,0.2);padding:2px 8px;border-radius:10px">Assessable: S1</span>
       </div>
       <!-- Spouse toggle (Phase 2.4) — synced with joint/separate radio selection -->
-      <input type="checkbox" id="spouse-toggle" style="display:none" aria-label="Toggle spouse mode"/>
+      <input type="checkbox" id="spouse-mode-toggle" style="display:none" aria-label="Toggle spouse mode"/>
       <!-- Year + action buttons pushed right -->
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
         <div class="year-selector" style="margin:0">
@@ -1731,7 +1731,7 @@ input,select,button,textarea{font-family:inherit}
         <div id="editBar" style="display:none"></div>
 
         <div class="btn-group" style="position:sticky;bottom:0;background:var(--bg);padding:10px 0;margin:0;border-top:1px solid var(--border2);z-index:10">
-          <button class="btn btn-primary" onclick="calculate()">▶ Run Computation</button>
+          <button class="btn btn-primary" id="run-computation-btn" onclick="calculate()">▶ Run Computation</button>
           <button class="btn btn-secondary" id="btnEditForm" onclick="scrollToForm()" style="display:none">↑ Back to Top</button>
           <button class="btn btn-ghost btn-sm" onclick="showCreditDebug()" style="font-size:10px;padding:4px 8px;opacity:0.6" title="Debug: show credit store state">🔍 Credits</button>
         </div>
@@ -1765,7 +1765,7 @@ input,select,button,textarea{font-family:inherit}
         </div>
 
         <!-- Results render here -->
-        <div id="resultsArea"></div>
+        <div id="live-proforma"></div>
 
         <!-- Result summary (Phase 2.2) — effective rate + balance -->
         <div id="result-summary" aria-live="polite"></div>
@@ -2950,7 +2950,7 @@ function nav(id, el) {
   // If navigating to personal tax, ensure right column shows placeholder if no result yet
   if(pageId==='personal') {
     const ph = document.getElementById('proformaPlaceholder');
-    const ra = document.getElementById('resultsArea');
+    const ra = document.getElementById('live-proforma');
     if(ph && ra && !ra.innerHTML.trim()) ph.style.display='';
   }
 }
@@ -8779,7 +8779,7 @@ function renderSingleResult(d) {
   const rightCol = document.getElementById('personalRight');
   if(rightCol) rightCol.scrollTop = 0;
 
-  document.getElementById('resultsArea').innerHTML = `
+  document.getElementById('live-proforma').innerHTML = `
     <div class="result-panel">
       <div class="result-panel-hdr">
         <span>Tax Computation — ${currentYear} · ${clientName} (${v('fileRef')||'No Ref'})</span>
@@ -9035,7 +9035,7 @@ function renderJointResult(d) {
   if(_sub2) _sub2.textContent = `${currentYear} · ${v('clientName')||'—'}`;
   const _rc2 = document.getElementById('personalRight');
   if(_rc2) _rc2.scrollTop = 0;
-  document.getElementById('resultsArea').innerHTML = `
+  document.getElementById('live-proforma').innerHTML = `
     <div class="result-panel">
       <div class="result-panel-hdr">
         <span>Joint Assessment — Tax Year ${currentYear} · ${v('clientName')||'—'}</span>
@@ -9143,7 +9143,7 @@ function renderSeparateResult(results, cgt, disposals) {
     </div>`;
   }).join('');
 
-  document.getElementById('resultsArea').innerHTML = `
+  document.getElementById('live-proforma').innerHTML = `
     <div class="result-panel">
       <div class="result-panel-hdr">
         <span>${modeLabel} — Tax Year ${currentYear} · ${v('clientName')||'—'}</span>
@@ -9330,7 +9330,7 @@ function downloadPDF() {
   const origText = btn ? btn.textContent : '';
   if(btn) { btn.textContent = '⏳ Generating…'; btn.disabled = true; }
 
-  const proforma = document.getElementById('resultsArea');
+  const proforma = document.getElementById('live-proforma');
   if(!proforma || !proforma.innerHTML.trim()) {
     alert('No computation result found. Please click ▶ Run Computation first.');
     if(btn) { btn.textContent = origText; btn.disabled = false; }
@@ -9564,7 +9564,7 @@ function resetAll() {
   if(addr) addr.value='';
   document.getElementById('disposalsList').innerHTML='';
   disposalCount=0;
-  document.getElementById('resultsArea').innerHTML='';
+  document.getElementById('live-proforma').innerHTML='';
   // Reset situation chips — clear all except employment (always on)
   situations.clear();
   situations.add('employment');
@@ -10193,11 +10193,22 @@ document.addEventListener('DOMContentLoaded', function() {
       computationEngine:         typeof COMPUTATION_ENGINE !== 'undefined' ? COMPUTATION_ENGINE : null,
       proformaBuilder:           typeof PROFORMA_BUILDER   !== 'undefined' ? PROFORMA_BUILDER   : null,
       ratesConfig:               typeof RATES_CONFIG       !== 'undefined' ? RATES_CONFIG       : null,
-      containerSelector:         '#resultsArea',
+      containerSelector:         '#live-proforma',
       warningContainerSelector:  '#validation-warnings',
       resultSummarySelector:     '#result-summary',
       debounceMs:                300,
     });
+
+    // Bind to personal-tax page inputs for live auto-calculation on input change
+    binding.bind('#page-personal');
+
+    // Also trigger live proforma when the Run Computation button is clicked
+    var runBtn = document.getElementById('run-computation-btn');
+    if (runBtn) {
+      runBtn.addEventListener('click', function() {
+        binding.run();
+      });
+    }
 
     // Expose for debugging
     window._proformaBinding = binding;
@@ -10304,15 +10315,15 @@ document.addEventListener('DOMContentLoaded', function() {
   var spouseUIBinding = null;
   if (typeof SpouseUIBinding !== 'undefined') {
     spouseUIBinding = new SpouseUIBinding({
-      containerSelector:     '#resultsArea',
+      containerSelector:     '#live-proforma',
       resultSummarySelector: '#result-summary',
     });
     spouseUIBinding.bindAssessmentModeRadios();
     window._spouseUIBinding = spouseUIBinding;
   }
 
-  // Sync the hidden #spouse-toggle checkbox with assessment mode radios
-  var spouseToggle = document.getElementById('spouse-toggle');
+  // Sync the hidden #spouse-mode-toggle checkbox with assessment mode radios
+  var spouseToggle = document.getElementById('spouse-mode-toggle');
   document.querySelectorAll('[name="assessMode"]').forEach(function(radio) {
     radio.addEventListener('change', function() {
       if (spouseToggle) spouseToggle.checked = (radio.value !== 'single');
