@@ -9314,6 +9314,10 @@ function downloadPDFForReturn(rid, event) {
 }
 
 function downloadPDF() {
+  // If the PDFExporter (Phase 2.3) already handled this click, skip the legacy export.
+  const exportBtn = document.getElementById('export-pdf-btn');
+  if (exportBtn && exportBtn._pdfExporterHandled) return;
+
   const r = window._lastResult;
   if(!r) { alert('Please run a computation first, then download the PDF.'); return; }
   if(window._jspdfLoadFailed || !window.jspdf || !window.html2canvas) {
@@ -10321,28 +10325,30 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // ── Phase 2.3: PDF export button ────────────────────────────────────────────
+  // The export-pdf-btn has onclick="downloadPDF()" as a reliable fallback.
+  // When a live COMPUTATION_ENGINE result is available we use PDFExporter for
+  // richer output. We use a flag to coordinate with the onclick so both do not fire.
   var exportBtn = document.getElementById('export-pdf-btn');
   if (exportBtn && typeof PDFExporter !== 'undefined') {
-    exportBtn.addEventListener('click', function(e) {
-      // The button's onclick already calls downloadPDF() — PDFExporter is used
-      // as a supplemental export when a COMPUTATION_ENGINE result is available.
+    exportBtn.addEventListener('click', function() {
       var lastComp = binding && binding.getLastComputation ? binding.getLastComputation() : null;
-      if (lastComp) {
+      if (lastComp && typeof PROFORMA_BUILDER !== 'undefined') {
+        // PDFExporter can produce enriched output — use it.
+        // Set a flag so the synchronous onclick handler (downloadPDF) skips itself.
+        exportBtn._pdfExporterHandled = true;
         var ex = new PDFExporter(lastComp);
         ex.setClientDetails({
-          name:   (document.getElementById('clientName')  || {}).value || '',
-          ppsn:   (document.getElementById('ppsNumber')   || {}).value || '',
-          address:(document.getElementById('clientAddress')|| {}).value || '',
-          refNo:  (document.getElementById('fileRef')     || {}).value || '',
+          name:    (document.getElementById('clientName')   || {}).value || '',
+          ppsn:    (document.getElementById('ppsNumber')    || {}).value || '',
+          address: (document.getElementById('clientAddress')|| {}).value || '',
+          refNo:   (document.getElementById('fileRef')      || {}).value || '',
           taxYear: parseInt((document.getElementById('globalYear') || {}).value) || 2025,
         });
-        // Only use PDFExporter if it can produce valid output (i.e., PROFORMA_BUILDER present)
-        // Otherwise fall through to the existing downloadPDF() called by onclick.
-        if (typeof PROFORMA_BUILDER !== 'undefined') {
-          e.stopImmediatePropagation();
-          ex.downloadPDF();
-        }
+        ex.downloadPDF();
+        // Reset flag after a tick so future clicks are not blocked
+        setTimeout(function() { exportBtn._pdfExporterHandled = false; }, 0);
       }
+      // If lastComp or PROFORMA_BUILDER not available, onclick="downloadPDF()" handles it.
       // If no live computation is available, the existing onclick="downloadPDF()" fires normally.
     });
   }

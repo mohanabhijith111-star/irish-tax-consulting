@@ -58,9 +58,9 @@
     var isRefund = balance < 0;
     var absBalance = Math.abs(balance);
 
-    // Effective tax rate = |balance| / gross income
+    // Effective tax rate = total tax (IT + USC + PRSI) / gross income (before any reliefs)
     var grossIncome = inc.grossIncome || 0;
-    var effRate = grossIncome > 0 ? Math.min(100, (grossIT / grossIncome) * 100) : 0;
+    var effRate = grossIncome > 0 ? Math.min(100, (totalTax / grossIncome) * 100) : 0;
 
     var hasChanged = this._lastBalance !== null && this._lastBalance !== balance;
     this._lastBalance = balance;

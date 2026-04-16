@@ -245,7 +245,11 @@
 
   SpouseUIBinding.prototype._emit = function(event, data) {
     var handlers = this._eventHandlers[event] || [];
-    handlers.forEach(function(fn) { try { fn(data); } catch (e) { /* silent */ } });
+    handlers.forEach(function(fn) {
+      try { fn(data); } catch (e) {
+        console.error('SpouseUIBinding: error in "' + event + '" handler', e);
+      }
+    });
   };
 
   SpouseUIBinding.prototype._ensureCSS = function() {

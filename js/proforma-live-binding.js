@@ -158,7 +158,12 @@
     if (!this.engine || !this.builder) {
       // Fallback: if the page's own calculate() function exists, delegate to it
       if (typeof global.calculate === 'function') {
-        try { global.calculate(); } catch (e) { /* silent */ }
+        console.debug('ProformaLiveBinding: engine/builder not available, delegating to global calculate()');
+        try { global.calculate(); } catch (e) {
+          console.error('ProformaLiveBinding: global calculate() fallback failed', e);
+        }
+      } else {
+        console.warn('ProformaLiveBinding: neither COMPUTATION_ENGINE/PROFORMA_BUILDER nor global calculate() is available.');
       }
       return;
     }
@@ -268,7 +273,9 @@
     var medCard = medCardEl ? medCardEl.checked : false;
 
     // ── Income ────────────────────────────────────────────────────────────────
-    // Employment: collect all emp_X_gross fields for s1 (not s2) to avoid double-counting
+    // _gatherSituation collects Spouse 1 (primary taxpayer / assessable spouse) income only.
+    // Spouse 2 income is gathered separately via SpouseComputation for joint assessments.
+    // Fields prefixed with 's2_' belong exclusively to Spouse 2 and are excluded here.
     var empIds = new Set();
     var emp = 0;
     document.querySelectorAll('[id$="_emp1_gross"],[id$="_emp2_gross"],[id$="_emp3_gross"]').forEach(function(el) {

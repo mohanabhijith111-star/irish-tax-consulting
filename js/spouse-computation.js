@@ -83,8 +83,12 @@
     // Credits: sum NR and refundable credits from both spouses
     var nrS1       = (s1.credits && s1.credits.totalNRApplied) || 0;
     var nrS2       = (s2.credits && s2.credits.totalNRApplied) || 0;
-    var totalNR    = round2(nrS1 + nrS2 + (s1.reliefs.medRelief||0) + (s2.reliefs.medRelief||0)
-                            + (s1.reliefs.tuitionRelief||0) + (s2.reliefs.tuitionRelief||0));
+    // Use defensive property access for reliefs in case the engine omits optional fields
+    var s1Reliefs  = s1.reliefs || {};
+    var s2Reliefs  = s2.reliefs || {};
+    var totalNR    = round2(nrS1 + nrS2
+                            + (s1Reliefs.medRelief     || 0) + (s2Reliefs.medRelief     || 0)
+                            + (s1Reliefs.tuitionRelief || 0) + (s2Reliefs.tuitionRelief || 0));
     var netIT      = round2(Math.max(0, grossIT - totalNR));
 
     var refS1      = (s1.totalRefundableCredits || 0);

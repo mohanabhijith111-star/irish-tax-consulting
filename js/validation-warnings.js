@@ -221,6 +221,8 @@
 
     this.checkRentalLimit(inc.rental || 0, formType);
     this.checkForeignIncome(inc.foreignIncome || 0, formType);
+    // situation.grossIncome.cgt = raw CGT gain (COMPUTATION_ENGINE input format)
+    // This differs from validateResult which uses result.cgt.gain (engine output format)
     this.checkCGT(inc.cgt || 0, formType);
     this.checkTradeIncome((inc.trade || 0) + (inc.directors || 0), formType);
     this.checkMortgageInterest(crd.MortgageInterestCredit || 0, at);

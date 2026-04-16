@@ -48,12 +48,15 @@
     var isRefund = combined < 0;
 
     // Per-spouse proformas from PROFORMA_BUILDER
+    // Use 'displayName' to avoid shadowing any existing 'name' property in client details
     var builder = global.PROFORMA_BUILDER;
+    var s1Cd = Object.assign({}, cd, { displayName: cd.spouse1Name || 'Spouse 1', name: cd.spouse1Name || cd.name || 'Spouse 1' });
+    var s2Cd = Object.assign({}, cd, { displayName: cd.spouse2Name || 'Spouse 2', name: cd.spouse2Name || 'Spouse 2' });
     var s1Html = builder && typeof builder.buildProformaHTML === 'function'
-      ? builder.buildProformaHTML(spouse1Computation, Object.assign({}, cd, { name: cd.spouse1Name || 'Spouse 1' }))
+      ? builder.buildProformaHTML(spouse1Computation, s1Cd)
       : _fallbackTable(spouse1Computation, 'Spouse 1');
     var s2Html = builder && typeof builder.buildProformaHTML === 'function'
-      ? builder.buildProformaHTML(spouse2Computation, Object.assign({}, cd, { name: cd.spouse2Name || 'Spouse 2' }))
+      ? builder.buildProformaHTML(spouse2Computation, s2Cd)
       : _fallbackTable(spouse2Computation, 'Spouse 2');
 
     // Badge CSS classes for balance
