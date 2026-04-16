@@ -10096,14 +10096,23 @@ async function doLogin() {
     return;
   }
   if(loginBtn) { loginBtn.disabled=true; loginBtn.textContent='Signing in...'; }
-  if(errorEl)  errorEl.style.display='none';
+  if(errorEl)  { errorEl.textContent=''; errorEl.style.display='none'; }
+
+  // Show "waking up" hint after 4 seconds (Render free tier cold start)
+  const wakeTimer = setTimeout(() => {
+    if(loginBtn && loginBtn.disabled) {
+      loginBtn.textContent='Waking up server... (~30s)';
+    }
+  }, 4000);
 
   try {
     await APIService.login(email, password);
+    clearTimeout(wakeTimer);
     hideLoginModal();
     // Log to audit
     try { APIService.logAuditEntry({action:'login',field:'session',newValue:'authenticated'}); } catch(e){}
   } catch(err) {
+    clearTimeout(wakeTimer);
     if(errorEl) { errorEl.textContent='⚠️ ' + (err.message||'Login failed. Check your credentials.'); errorEl.style.display='block'; }
   } finally {
     if(loginBtn) { loginBtn.disabled=false; loginBtn.textContent='Sign In'; }
@@ -10123,33 +10132,31 @@ async function handleLogout() {
   showLoginModal();
 }
 
-// ── Wire up on DOM ready ─────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', function() {
+// ── Wire up — works whether DOM is ready or not ──────────────────────────
+function initAuthUI() {
   const loginBtn  = document.getElementById('login-btn');
   const loginPass = document.getElementById('login-password');
-  if(loginBtn)  loginBtn.addEventListener('click', doLogin);
-  if(loginPass) loginPass.addEventListener('keypress', e => { if(e.key==='Enter') doLogin(); });
+  if(loginBtn)  { loginBtn.onclick = doLogin; }
+  if(loginPass) { loginPass.onkeypress = e => { if(e.key==='Enter') doLogin(); }; }
 
-  // Auth gate: if already logged in, hide modal and show user
   if(TokenManager.isAuthenticated()) {
     hideLoginModal();
-    updateTopbarUser(); // show immediately from cached user
-    // Verify token is still valid server-side
-    APIService.getCurrentUser().then(user => {
-      updateTopbarUser(); // refresh with latest server data
-    }).catch(() => {
-      // Token expired or invalid — force re-login
-      TokenManager.clearToken();
-      showLoginModal();
+    updateTopbarUser();
+    APIService.getCurrentUser().then(() => updateTopbarUser()).catch(() => {
+      TokenManager.clearToken(); showLoginModal();
     });
   } else {
-    // Set demo/test user for first load so sidebar shows something
-    // This is overwritten on actual login
-    const defaultUser = { name: 'Demo User', email: 'demo@irish-tax.ie', role: 'adviser' };
-    TokenManager.setUser(defaultUser);
     showLoginModal();
   }
-});
+}
+
+// Fire initAuthUI as soon as possible — covers all timing scenarios
+if(document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initAuthUI);
+} else {
+  // DOM already ready — call immediately (covers scripts at end of body)
+  initAuthUI();
+}
 
 // Also update topbar after successful login (called from hideLoginModal)
 function updateTopbarUser() {
