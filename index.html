@@ -10053,14 +10053,8 @@ function showLoginModal() {
 function hideLoginModal() {
   const overlay = document.getElementById('login-overlay');
   if(overlay) { overlay.classList.remove('open'); overlay.style.display='none'; }
-  // Show user info in topbar
-  const user = TokenManager.getUser();
-  if(user) {
-    const userEl = document.getElementById('topbar-user');
-    const logoutEl = document.getElementById('logout-btn');
-    if(userEl)   { userEl.textContent = user.name || user.email; userEl.style.display=''; }
-    if(logoutEl) { logoutEl.style.display=''; }
-  }
+  // Small delay to ensure DOM is ready before updating topbar
+  setTimeout(updateTopbarUser, 50);
 }
 
 async function doLogin() {
@@ -10107,10 +10101,30 @@ document.addEventListener('DOMContentLoaded', function() {
   // Auth gate: if already logged in, hide modal and show user
   if(TokenManager.isAuthenticated()) {
     hideLoginModal();
+    // Also verify token is still valid against the server
+    APIService.getCurrentUser().then(user => {
+      const userEl   = document.getElementById('topbar-user');
+      const logoutEl = document.getElementById('logout-btn');
+      if(userEl)   { userEl.textContent = user.name || user.email; userEl.style.display = 'inline'; }
+      if(logoutEl) { logoutEl.style.display = 'inline-block'; }
+    }).catch(() => {
+      // Token expired or invalid — force re-login
+      TokenManager.clearToken();
+      showLoginModal();
+    });
   } else {
     showLoginModal();
   }
 });
+
+// Also update topbar after successful login (called from hideLoginModal)
+function updateTopbarUser() {
+  const user     = TokenManager.getUser();
+  const userEl   = document.getElementById('topbar-user');
+  const logoutEl = document.getElementById('logout-btn');
+  if(user && userEl)   { userEl.textContent = user.name || user.email; userEl.style.display = 'inline'; }
+  if(user && logoutEl) { logoutEl.style.display = 'inline-block'; }
+}
 
 
 </script>
