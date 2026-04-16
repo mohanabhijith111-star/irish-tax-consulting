@@ -115,6 +115,26 @@ input,select,button,textarea{font-family:inherit}
 .sb-item:hover{background:rgba(255,255,255,0.1);color:#fff}
 .sb-item.active{background:rgba(255,255,255,0.15);color:#fff;font-weight:500}
 .sb-item .ic{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+
+.sb-user {
+  padding:12px 18px;border-top:1px solid rgba(255,255,255,0.12);
+  display:flex;flex-direction:column;gap:6px;
+}
+.sb-user-name {
+  font-size:11px;font-weight:700;color:rgba(255,255,255,0.9);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.sb-user-role {
+  font-size:10px;color:rgba(255,255,255,0.45);
+}
+.sb-logout {
+  background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);
+  color:rgba(255,255,255,0.7);border-radius:3px;padding:5px 10px;
+  font-size:10px;cursor:pointer;text-align:left;width:100%;
+  transition:background 0.15s;
+}
+.sb-logout:hover { background:rgba(220,38,38,0.3);border-color:rgba(220,38,38,0.5);color:#fff; }
+
 .sb-footer{padding:14px 18px;border-top:1px solid rgba(255,255,255,0.12);font-size:10px;color:rgba(255,255,255,0.4);line-height:1.6}
 
 /* ── Main ── */
@@ -1150,6 +1170,11 @@ input,select,button,textarea{font-family:inherit}
     <button class="sb-item" onclick="nav('reference',this)"><span class="ic">📚</span>Tax Reference</button>
     <button class="sb-item" onclick="nav('deadlines',this)"><span class="ic">📅</span>Key Deadlines</button>
   </nav>
+  <div class="sb-user" id="sb-user-block" style="display:none">
+    <div class="sb-user-name" id="sb-user-name">—</div>
+    <div class="sb-user-role" id="sb-user-role">Adviser</div>
+    <button class="sb-logout" onclick="handleLogout()">🚪 Sign Out</button>
+  </div>
   <div class="sb-footer">For internal use only.<br>Not for client distribution.<br>Rates: Finance Act 2022–2026</div>
 </aside>
 
@@ -10087,10 +10112,14 @@ async function doLogin() {
 
 async function handleLogout() {
   await APIService.logout();
+  // Hide topbar user
   const userEl   = document.getElementById('topbar-user');
   const logoutEl = document.getElementById('logout-btn');
   if(userEl)   userEl.style.display='none';
   if(logoutEl) logoutEl.style.display='none';
+  // Hide sidebar user block
+  const sbBlock = document.getElementById('sb-user-block');
+  if(sbBlock) sbBlock.style.display='none';
   showLoginModal();
 }
 
@@ -10104,29 +10133,42 @@ document.addEventListener('DOMContentLoaded', function() {
   // Auth gate: if already logged in, hide modal and show user
   if(TokenManager.isAuthenticated()) {
     hideLoginModal();
-    // Also verify token is still valid against the server
+    updateTopbarUser(); // show immediately from cached user
+    // Verify token is still valid server-side
     APIService.getCurrentUser().then(user => {
-      const userEl   = document.getElementById('topbar-user');
-      const logoutEl = document.getElementById('logout-btn');
-      if(userEl)   { userEl.textContent = user.name || user.email; userEl.style.display = 'inline'; }
-      if(logoutEl) { logoutEl.style.display = 'inline-block'; }
+      updateTopbarUser(); // refresh with latest server data
     }).catch(() => {
       // Token expired or invalid — force re-login
       TokenManager.clearToken();
       showLoginModal();
     });
   } else {
+    // Set demo/test user for first load so sidebar shows something
+    // This is overwritten on actual login
+    const defaultUser = { name: 'Demo User', email: 'demo@irish-tax.ie', role: 'adviser' };
+    TokenManager.setUser(defaultUser);
     showLoginModal();
   }
 });
 
 // Also update topbar after successful login (called from hideLoginModal)
 function updateTopbarUser() {
-  const user     = TokenManager.getUser();
+  const user = TokenManager.getUser();
+  if(!user) return;
+
+  // Topbar
   const userEl   = document.getElementById('topbar-user');
   const logoutEl = document.getElementById('logout-btn');
-  if(user && userEl)   { userEl.textContent = user.name || user.email; userEl.style.display = 'inline'; }
-  if(user && logoutEl) { logoutEl.style.display = 'inline-block'; }
+  if(userEl)   { userEl.textContent = user.name || user.email; userEl.style.display = 'inline'; }
+  if(logoutEl) { logoutEl.style.display = 'inline-block'; }
+
+  // Sidebar user block
+  const sbBlock = document.getElementById('sb-user-block');
+  const sbName  = document.getElementById('sb-user-name');
+  const sbRole  = document.getElementById('sb-user-role');
+  if(sbBlock) sbBlock.style.display = 'flex';
+  if(sbName)  sbName.textContent  = 'Welcome, ' + (user.name || user.email) + '!';
+  if(sbRole)  sbRole.textContent  = user.role ? (user.role.charAt(0).toUpperCase() + user.role.slice(1)) : 'Adviser';
 }
 </script>
 </body>
