@@ -1549,6 +1549,8 @@ input,select,button,textarea{font-family:inherit}
         <label class="chk-row" style="margin:0"><input type="radio" name="assessableSpouse" value="s2" onchange="onAssessableSpouseChange()"> <span class="chk-text" style="font-size:12px">Spouse 2</span></label>
         <span id="assessableSpouseBadge" style="font-size:10px;font-weight:600;background:var(--accent-lt);color:var(--accent);border:1px solid rgba(28,53,87,0.2);padding:2px 8px;border-radius:10px">Assessable: S1</span>
       </div>
+      <!-- Spouse toggle (Phase 2.4) — synced with joint/separate radio selection -->
+      <input type="checkbox" id="spouse-toggle" style="display:none" aria-label="Toggle spouse mode"/>
       <!-- Year + action buttons pushed right -->
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
         <div class="year-selector" style="margin:0">
@@ -1558,7 +1560,7 @@ input,select,button,textarea{font-family:inherit}
           </select>
         </div>
         <button class="btn btn-secondary btn-sm" onclick="resetAll()">↺ Clear</button>
-        <button class="btn btn-ghost btn-sm" onclick="downloadPDF()">⬇ PDF</button>
+        <button class="btn btn-ghost btn-sm" id="export-pdf-btn" onclick="downloadPDF()">⬇ PDF</button>
       </div>
     </div>
 
@@ -1752,6 +1754,9 @@ input,select,button,textarea{font-family:inherit}
           </div>
         </div>
 
+        <!-- Validation warnings container (Phase 2.2) -->
+        <div id="validation-warnings" aria-live="polite" style="margin-bottom:8px"></div>
+
         <!-- Proforma placeholder -->
         <div class="proforma-placeholder" id="proformaPlaceholder">
           <div class="proforma-placeholder-icon">📋</div>
@@ -1761,6 +1766,9 @@ input,select,button,textarea{font-family:inherit}
 
         <!-- Results render here -->
         <div id="resultsArea"></div>
+
+        <!-- Result summary (Phase 2.2) — effective rate + balance -->
+        <div id="result-summary" aria-live="polite"></div>
 
         <!-- Mark as Done bar -->
         <div id="markDoneBar" style="display:none;margin-top:16px">
@@ -9306,6 +9314,10 @@ function downloadPDFForReturn(rid, event) {
 }
 
 function downloadPDF() {
+  // If the PDFExporter (Phase 2.3) already handled this click, skip the legacy export.
+  const exportBtn = document.getElementById('export-pdf-btn');
+  if (exportBtn && exportBtn._pdfExporterHandled) return;
+
   const r = window._lastResult;
   if(!r) { alert('Please run a computation first, then download the PDF.'); return; }
   if(window._jspdfLoadFailed || !window.jspdf || !window.html2canvas) {
@@ -10152,5 +10164,197 @@ function updateTopbarUser() {
 <script src="js/computation-engine-2025.js"></script>
 <script src="js/proforma-builder-2025.js"></script>
 <script src="js/rates-config-ui.js"></script>
+
+<!-- Phase 2.2 — Live Integration: Validation, Result Summary, Live Binding -->
+<script src="js/validation-warnings.js"></script>
+<script src="js/result-summary-renderer.js"></script>
+<script src="js/proforma-live-binding.js"></script>
+
+<!-- Phase 2.3 — PDF Export -->
+<script src="js/pdf-export-handler.js"></script>
+
+<!-- Phase 2.4 — Spouse / Joint Assessment Support -->
+<script src="js/spouse-computation.js"></script>
+<script src="js/spouse-proforma-builder.js"></script>
+<script src="js/spouse-ui-binding.js"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// PHASE 2.2–2.4 INITIALISATION
+// Wires up ProformaLiveBinding, ResultSummaryRenderer, ValidationWarnings,
+// PDFExporter, SpouseComputation, and SpouseUIBinding to the existing UI.
+// ═══════════════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', function() {
+
+  // ── Phase 2.2: Live Binding ─────────────────────────────────────────────
+  var binding = null;
+  if (typeof ProformaLiveBinding !== 'undefined') {
+    binding = new ProformaLiveBinding({
+      computationEngine:         typeof COMPUTATION_ENGINE !== 'undefined' ? COMPUTATION_ENGINE : null,
+      proformaBuilder:           typeof PROFORMA_BUILDER   !== 'undefined' ? PROFORMA_BUILDER   : null,
+      ratesConfig:               typeof RATES_CONFIG       !== 'undefined' ? RATES_CONFIG       : null,
+      containerSelector:         '#resultsArea',
+      warningContainerSelector:  '#validation-warnings',
+      resultSummarySelector:     '#result-summary',
+      debounceMs:                300,
+    });
+
+    // Expose for debugging
+    window._proformaBinding = binding;
+  }
+
+  // ── Phase 2.2: Validation warnings — also fire on the existing calculate() ──
+  // Patch the global calculate() to also run Phase 2.2 validators after each computation
+  var _origCalculate = window.calculate;
+  if (typeof _origCalculate === 'function') {
+    window.calculate = function() {
+      _origCalculate.apply(this, arguments);
+
+      // ValidationWarnings — run against last result
+      if (typeof ValidationWarnings !== 'undefined') {
+        var warnEl = document.getElementById('validation-warnings');
+        if (warnEl) {
+          var vw = new ValidationWarnings({ container: warnEl });
+          var r  = window._lastResult;
+          if (r) {
+            var ft = (function() {
+              var el = document.getElementById('sitFormTypeOverride');
+              if (el && el.value !== 'auto') return el.value;
+              var f11Chips = ['se','foreign','cgt','propdir'];
+              return f11Chips.some(function(s) {
+                var c = document.querySelector('.sit-chip[data-sit="'+s+'"]');
+                return c && c.classList.contains('active');
+              }) ? 'f11' : 'f12';
+            })();
+
+            // Build a simplified result structure for validateResult
+            var lr = window._lastResult || {};
+            var simpleResult = {
+              assessmentType: (function(){
+                var m = document.querySelector('[name="assessMode"]:checked');
+                return (m && m.value !== 'single') ? 'Married' : 'Single';
+              })(),
+              income: {
+                rental:        lr.s1_rental || 0,
+                foreignIncome: lr.s1_foreign || 0,
+                trade:         lr.s1_trade || 0,
+                directors:     0,
+              },
+              reliefs: {
+                pensionExcess: 0,
+              },
+              credits: { list: [], unusedNR: lr.unusedNR || 0 },
+              cgt:     { gain: lr.cgtGain || 0 },
+            };
+            vw.validateResult(simpleResult, ft);
+            vw.render();
+          }
+        }
+      }
+
+      // ResultSummaryRenderer — update after each calculation
+      if (typeof ResultSummaryRenderer !== 'undefined') {
+        var sumEl = document.getElementById('result-summary');
+        if (sumEl) {
+          var rsr = new ResultSummaryRenderer({ container: sumEl });
+          var lr2 = window._lastResult;
+          if (lr2 && lr2.totalLiability != null) {
+            // Build a minimal computation object from _lastResult for the renderer.
+            //
+            // _lastResult.balance convention (existing app):
+            //   balance = totalPaid - netLiability
+            //   Positive balance → overpaid → REFUND DUE
+            //   Negative balance → underpaid → TAX PAYABLE
+            //
+            // ResultSummaryRenderer.overallBalance convention:
+            //   overallBalance < 0 → REFUND DUE
+            //   overallBalance >= 0 → TAX PAYABLE
+            //
+            // Conversion: if _lastResult.balance > 0 (refund), set overallBalance to
+            // a negative value so ResultSummaryRenderer displays "Refund Due".
+            var bal   = lr2.balance || 0;
+            var isRef = bal > 0;  // _lastResult: positive = refund (totalPaid > netLiability)
+            var simComp = {
+              summary: {
+                grossIT:        lr2.itGross    || 0,
+                totalUSC:       lr2.totalUSC   || 0,
+                totalPRSI:      lr2.totalPRSI  || 0,
+                cgtLiability:   lr2.cgtPayable || 0,
+                lessNRCredits:  lr2.nrCredits  || 0,
+                lessRefCredits: lr2.refCredits || 0,
+                // Convert to RSR convention: negative = refund, positive = payable
+                overallBalance: isRef ? -Math.abs(bal) : Math.abs(bal),
+                isRefund:       isRef,
+                taxPaid: {
+                  incomeTax: lr2.paidIT   || 0,
+                  usc:       lr2.paidUSC  || 0,
+                  prsi:      lr2.paidPRSI || 0,
+                },
+              },
+              income: { grossIncome: lr2.grossIncome || 0 },
+            };
+            rsr.render(simComp);
+          }
+        }
+      }
+    };
+  }
+
+  // ── Phase 2.4: Spouse toggle ────────────────────────────────────────────────
+  var spouseUIBinding = null;
+  if (typeof SpouseUIBinding !== 'undefined') {
+    spouseUIBinding = new SpouseUIBinding({
+      containerSelector:     '#resultsArea',
+      resultSummarySelector: '#result-summary',
+    });
+    spouseUIBinding.bindAssessmentModeRadios();
+    window._spouseUIBinding = spouseUIBinding;
+  }
+
+  // Sync the hidden #spouse-toggle checkbox with assessment mode radios
+  var spouseToggle = document.getElementById('spouse-toggle');
+  document.querySelectorAll('[name="assessMode"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      if (spouseToggle) spouseToggle.checked = (radio.value !== 'single');
+    });
+  });
+  if (spouseToggle) {
+    spouseToggle.addEventListener('change', function(e) {
+      if (binding) binding.toggleSpouseMode(e.target.checked);
+    });
+  }
+
+  // ── Phase 2.3: PDF export button ────────────────────────────────────────────
+  // The export-pdf-btn has onclick="downloadPDF()" as a reliable fallback.
+  // When a live COMPUTATION_ENGINE result is available we use PDFExporter for
+  // richer output. We use a flag to coordinate with the onclick so both do not fire.
+  var exportBtn = document.getElementById('export-pdf-btn');
+  if (exportBtn && typeof PDFExporter !== 'undefined') {
+    exportBtn.addEventListener('click', function() {
+      var lastComp = binding && binding.getLastComputation ? binding.getLastComputation() : null;
+      if (lastComp && typeof PROFORMA_BUILDER !== 'undefined') {
+        // PDFExporter can produce enriched output — use it.
+        // Set a flag so the synchronous onclick handler (downloadPDF) skips itself.
+        exportBtn._pdfExporterHandled = true;
+        var ex = new PDFExporter(lastComp);
+        ex.setClientDetails({
+          name:    (document.getElementById('clientName')   || {}).value || '',
+          ppsn:    (document.getElementById('ppsNumber')    || {}).value || '',
+          address: (document.getElementById('clientAddress')|| {}).value || '',
+          refNo:   (document.getElementById('fileRef')      || {}).value || '',
+          taxYear: parseInt((document.getElementById('globalYear') || {}).value) || 2025,
+        });
+        ex.downloadPDF();
+        // Reset flag after a tick so future clicks are not blocked
+        setTimeout(function() { exportBtn._pdfExporterHandled = false; }, 0);
+      }
+      // If lastComp or PROFORMA_BUILDER not available, onclick="downloadPDF()" handles it.
+      // If no live computation is available, the existing onclick="downloadPDF()" fires normally.
+    });
+  }
+
+  console.log('ITC Phase 2.2–2.4: modules initialised.');
+});
+</script>
 </body>
 </html>
