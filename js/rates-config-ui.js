@@ -315,7 +315,7 @@
     if (!panel) return;
 
     // Update tab buttons
-    var tabs = panel.parentElement.querySelectorAll('.rc-tab');
+    var tabs = panel.querySelectorAll('.rc-tab');
     tabs.forEach(function(t) { t.classList.remove('active'); });
     if (btn) btn.classList.add('active');
 

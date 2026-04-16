@@ -147,7 +147,7 @@
       note: 'Deducted at source via PAYE',
     },
     classS: {
-      rate: 0.04125, // blended 2025 rate
+      rate: 0.04125, // 4.0% (Jan–Sep 2025) + 4.2% (Oct–Dec 2025) weighted average = 4.125% effective annual rate
       description: 'Class S — Self-Employed / Directors (4.1%)',
       minAnnual: 650,
       threshold: 5000,

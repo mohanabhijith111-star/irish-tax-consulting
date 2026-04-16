@@ -158,7 +158,7 @@
 
     // Tuition fees: s.473A disregard
     var tuitionGross    = num(rel.tuitionFees);
-    var tuitionStudents = Math.max(1, Math.round(num(rel.tuitionStudents) || 1));
+    var tuitionStudents = Math.max(1, Math.round(num(rel.tuitionStudents)));
     var tuitionDisregard = R.RELIEFS.TuitionFees.disregard.firstStudent
       + Math.max(0, tuitionStudents - 1) * R.RELIEFS.TuitionFees.disregard.subsequentStudents;
     var tuitionNet      = Math.max(0, tuitionGross - tuitionDisregard);
@@ -577,7 +577,7 @@
       } else {
         var rawS = Math.round(seBase * PS.rate);
         classS = Math.max(rawS, PS.minAnnual);
-        breakdown.push({ label: 'Self-employed / directors — Class S @ ' + (PS.rate * 100).toFixed(4).replace(/\.?0+$/, '') + '%',
+        breakdown.push({ label: 'Self-employed / directors — Class S @ ' + (PS.rate * 100).toFixed(1) + '%',
                          base: seBase, rate: PS.rate, charge: classS, note: 'Via self-assessment' });
       }
     }
@@ -603,7 +603,7 @@
                            note: 'Below €' + PK.threshold.toLocaleString() + ' threshold — exempt (PAYE employee)' });
         } else {
           classK = round2(unearnedBase * PK.rate);
-          breakdown.push({ label: 'Unearned income — Class K @ ' + (PK.rate * 100).toFixed(3) + '%',
+          breakdown.push({ label: 'Unearned income — Class K @ ' + (PK.rate * 100).toFixed(1) + '%',
                            base: unearnedBase, rate: PK.rate, charge: classK });
         }
       }

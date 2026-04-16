@@ -188,7 +188,7 @@
     if (it.higherRateBand > 0) {
       rows.push(row('Higher Rate Band (' + pct(0.40) + ' × ' + euro(it.higherRateBand) + ')', euro(it.higherRateTax), 'pf-right', 1));
     } else {
-      rows.push(row('Higher Rate Band (20% standard rate band: ' + euro(it.cutOff) + ')', '<span class="pf-nil">—</span>', 'pf-right', 1));
+      rows.push(row('Higher Rate Band (income within 40% standard rate band: ' + euro(it.cutOff) + ')', '<span class="pf-nil">—</span>', 'pf-right', 1));
     }
     rows.push(totalRow('Gross Income Tax', euro(it.grossIT)));
     rows.push(spacerRow());
