@@ -14,12 +14,30 @@ const auditRoutes       = require('./routes/audit');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
+// ── Allowed origins ───────────────────────────────────────────────────────
+const ALLOWED_ORIGINS = [
+  'https://mohanabhijith111-star.github.io',  // GitHub Pages (production)
+  'http://localhost:3000',                      // local dev
+  'http://localhost:5500',                      // VS Code Live Server
+  'http://127.0.0.1:5500',                      // VS Code Live Server alt
+  'null',                                       // file:// local HTML files
+];
+
 // ── Middleware ────────────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGIN || 'https://mohanabhijith111-star.github.io',
+  origin: function(origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, curl)
+    // or from file:// (origin is 'null') or from allowed list
+    if(!origin || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS: ' + origin));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
 }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
