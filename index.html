@@ -1157,10 +1157,14 @@ input,select,button,textarea{font-family:inherit}
 <div class="main">
 
   <!-- Top bar -->
-  <div class="topbar">
+  <div class="topbar" style="display:flex;align-items:center;justify-content:space-between">
     <div>
       <div class="topbar-title" id="pageTitle">Personal Tax Computation</div>
       <div class="topbar-meta" id="pageMeta">Irish Tax Consulting — Internal System</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span id="topbar-user" style="font-size:11px;color:var(--text3);display:none"></span>
+      <button class="btn btn-secondary btn-sm" onclick="handleLogout()" id="logout-btn" style="display:none">🚪 Logout</button>
     </div>
   </div>
 
@@ -1400,6 +1404,74 @@ input,select,button,textarea{font-family:inherit}
   </div>
 
   <!-- ══════════ ADD CLIENT MODAL ══════════ -->
+  <!-- ════════════════════════════════════════════════════════════════
+       LOGIN MODAL
+       ════════════════════════════════════════════════════════════════ -->
+  <div id="login-overlay" class="modal-overlay open">
+    <div class="modal" style="width:420px">
+      <div class="modal-hdr">
+        <h3>Irish Tax Consulting</h3>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom:20px">
+          <p style="font-size:14px;color:var(--text2);margin-bottom:16px">
+            Welcome. Please sign in to continue.
+          </p>
+        </div>
+        <div class="field">
+          <label class="field-label">Email</label>
+          <input type="email" id="login-email" placeholder="your@email.com"/>
+        </div>
+        <div class="field">
+          <label class="field-label">Password</label>
+          <input type="password" id="login-password" placeholder="••••••••"/>
+        </div>
+        <div id="login-error" style="display:none;color:var(--red);font-size:12px;margin-bottom:12px;padding:8px;background:var(--red-lt);border-radius:3px;"></div>
+        <div style="display:flex;gap:8px">
+          <button id="login-btn" class="btn btn-primary" style="flex:1">Sign In</button>
+        </div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);font-size:11px;color:var(--text3)">
+          <p>Demo credentials (if enabled):</p>
+          <p style="font-family:var(--mono);margin-top:4px">Email: demo@irish-tax.ie<br/>Password: Demo12345</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════
+       LOGIN MODAL
+       ════════════════════════════════════════════════════════════════ -->
+  <div id="login-overlay" class="modal-overlay open">
+    <div class="modal" style="width:420px">
+      <div class="modal-hdr">
+        <h3>Irish Tax Consulting</h3>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom:20px">
+          <p style="font-size:14px;color:var(--text2);margin-bottom:16px">
+            Welcome. Please sign in to continue.
+          </p>
+        </div>
+        <div class="field">
+          <label class="field-label">Email</label>
+          <input type="email" id="login-email" placeholder="your@email.com"/>
+        </div>
+        <div class="field">
+          <label class="field-label">Password</label>
+          <input type="password" id="login-password" placeholder="••••••••"/>
+        </div>
+        <div id="login-error" style="display:none;color:var(--red);font-size:12px;margin-bottom:12px;padding:8px;background:var(--red-lt);border-radius:3px;"></div>
+        <div style="display:flex;gap:8px">
+          <button id="login-btn" class="btn btn-primary" style="flex:1">Sign In</button>
+        </div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);font-size:11px;color:var(--text3)">
+          <p>Demo credentials (if enabled):</p>
+          <p style="font-family:var(--mono);margin-top:4px">Email: demo@irish-tax.ie<br/>Password: Demo12345</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="addClientModal">
     <div class="modal">
       <div class="modal-hdr">
@@ -9887,6 +9959,160 @@ window.onload = function() {
   refreshConsultantFilter();
   updateQueueBadge();
 };
+
+// ════════════════════════════════════════════════════════════════
+// API SERVICE LAYER
+// ════════════════════════════════════════════════════════════════
+
+const API_CONFIG = {
+  BASE_URL: 'https://irish-tax-api.onrender.com',
+  // For local dev: BASE_URL: 'http://localhost:3000',
+  ENDPOINTS: {
+    AUTH_LOGIN:    '/api/auth/login',
+    AUTH_REGISTER: '/api/auth/register',
+    AUTH_ME:       '/api/auth/me',
+    AUTH_PASSWORD: '/api/auth/password',
+    CLIENTS:       '/api/clients',
+    RETURNS:       '/api/returns',
+    CALCULATIONS:  '/api/calculations',
+    AUDIT:         '/api/audit',
+    HEALTH:        '/api/health'
+  }
+};
+
+// ── JWT Token Management ─────────────────────────────────────────────────
+const TokenManager = {
+  TOKEN_KEY: 'itc_jwt_token',
+  USER_KEY:  'itc_user',
+  setToken(token)  { localStorage.setItem(this.TOKEN_KEY, token); },
+  getToken()       { return localStorage.getItem(this.TOKEN_KEY); },
+  clearToken()     { localStorage.removeItem(this.TOKEN_KEY); localStorage.removeItem(this.USER_KEY); },
+  setUser(user)    { localStorage.setItem(this.USER_KEY, JSON.stringify(user)); },
+  getUser()        { const u=localStorage.getItem(this.USER_KEY); return u?JSON.parse(u):null; },
+  isAuthenticated(){ return !!this.getToken(); }
+};
+
+// ── API Service ──────────────────────────────────────────────────────────
+const APIService = {
+  async request(endpoint, options={}) {
+    const url = API_CONFIG.BASE_URL + endpoint;
+    const headers = { 'Content-Type':'application/json', ...(options.headers||{}) };
+    const token = TokenManager.getToken();
+    if(token) headers['Authorization'] = 'Bearer ' + token;
+    try {
+      const response = await fetch(url, { ...options, headers });
+      if(!response.ok) {
+        const err = await response.json().catch(()=>({error:'HTTP '+response.status}));
+        throw new Error(err.error || 'HTTP ' + response.status);
+      }
+      return await response.json();
+    } catch(err) {
+      console.error('API Error [' + endpoint + ']:', err.message);
+      throw err;
+    }
+  },
+  async login(email, password) {
+    const data = await this.request(API_CONFIG.ENDPOINTS.AUTH_LOGIN, { method:'POST', body:JSON.stringify({email,password}) });
+    TokenManager.setToken(data.token);
+    TokenManager.setUser(data.user);
+    return data;
+  },
+  async logout()         { TokenManager.clearToken(); },
+  async getCurrentUser() { const d=await this.request(API_CONFIG.ENDPOINTS.AUTH_ME,{method:'GET'}); TokenManager.setUser(d); return d; },
+  async changePassword(cur, nw) { return this.request(API_CONFIG.ENDPOINTS.AUTH_PASSWORD,{method:'PATCH',body:JSON.stringify({currentPassword:cur,newPassword:nw})}); },
+  async getClients(f={})        { return this.request(API_CONFIG.ENDPOINTS.CLIENTS+'?'+new URLSearchParams(f),{method:'GET'}); },
+  async getClient(id)           { return this.request(API_CONFIG.ENDPOINTS.CLIENTS+'/'+id,{method:'GET'}); },
+  async createClient(d)         { return this.request(API_CONFIG.ENDPOINTS.CLIENTS,{method:'POST',body:JSON.stringify(d)}); },
+  async updateClient(id,d)      { return this.request(API_CONFIG.ENDPOINTS.CLIENTS+'/'+id,{method:'PUT',body:JSON.stringify(d)}); },
+  async addClientHistory(id,h)  { return this.request(API_CONFIG.ENDPOINTS.CLIENTS+'/'+id+'/history',{method:'POST',body:JSON.stringify(h)}); },
+  async deleteClient(id,hard)   { return this.request(API_CONFIG.ENDPOINTS.CLIENTS+'/'+id+(hard?'?hard=true':''),{method:'DELETE'}); },
+  async getReturns(f={})        { return this.request(API_CONFIG.ENDPOINTS.RETURNS+'?'+new URLSearchParams(f),{method:'GET'}); },
+  async getReturn(id)           { return this.request(API_CONFIG.ENDPOINTS.RETURNS+'/'+id,{method:'GET'}); },
+  async createReturn(d)         { return this.request(API_CONFIG.ENDPOINTS.RETURNS,{method:'POST',body:JSON.stringify(d)}); },
+  async updateReturn(id,d)      { return this.request(API_CONFIG.ENDPOINTS.RETURNS+'/'+id,{method:'PATCH',body:JSON.stringify(d)}); },
+  async updateReturnStatus(id,s){ return this.request(API_CONFIG.ENDPOINTS.RETURNS+'/'+id+'/status',{method:'PATCH',body:JSON.stringify({status:s})}); },
+  async addReturnHistory(id,h)  { return this.request(API_CONFIG.ENDPOINTS.RETURNS+'/'+id+'/history',{method:'POST',body:JSON.stringify(h)}); },
+  async deleteReturn(id)        { return this.request(API_CONFIG.ENDPOINTS.RETURNS+'/'+id,{method:'DELETE'}); },
+  async saveCalculation(rid,d)  { return this.request(API_CONFIG.ENDPOINTS.CALCULATIONS+'/'+rid,{method:'POST',body:JSON.stringify(d)}); },
+  async getCalculation(rid)     { return this.request(API_CONFIG.ENDPOINTS.CALCULATIONS+'/'+rid,{method:'GET'}); },
+  async getCalculationsSummary(yr){ return this.request(API_CONFIG.ENDPOINTS.CALCULATIONS+'/summary/year/'+yr,{method:'GET'}); },
+  async getAuditLog(f={})       { return this.request(API_CONFIG.ENDPOINTS.AUDIT+'?'+new URLSearchParams(f),{method:'GET'}); },
+  async logAuditEntry(d)        { return this.request(API_CONFIG.ENDPOINTS.AUDIT,{method:'POST',body:JSON.stringify(d)}); },
+  async healthCheck()           { return this.request(API_CONFIG.ENDPOINTS.HEALTH,{method:'GET'}); }
+};
+
+// ════════════════════════════════════════════════════════════════
+// LOGIN HANDLER & AUTH GATE
+// ════════════════════════════════════════════════════════════════
+
+function showLoginModal() {
+  const overlay = document.getElementById('login-overlay');
+  if(overlay) { overlay.classList.add('open'); overlay.style.display='flex'; }
+}
+
+function hideLoginModal() {
+  const overlay = document.getElementById('login-overlay');
+  if(overlay) { overlay.classList.remove('open'); overlay.style.display='none'; }
+  // Show user info in topbar
+  const user = TokenManager.getUser();
+  if(user) {
+    const userEl = document.getElementById('topbar-user');
+    const logoutEl = document.getElementById('logout-btn');
+    if(userEl)   { userEl.textContent = user.name || user.email; userEl.style.display=''; }
+    if(logoutEl) { logoutEl.style.display=''; }
+  }
+}
+
+async function doLogin() {
+  const email    = document.getElementById('login-email')?.value?.trim();
+  const password = document.getElementById('login-password')?.value?.trim();
+  const errorEl  = document.getElementById('login-error');
+  const loginBtn = document.getElementById('login-btn');
+
+  if(!email || !password) {
+    if(errorEl) { errorEl.textContent='⚠️ Please enter email and password'; errorEl.style.display='block'; }
+    return;
+  }
+  if(loginBtn) { loginBtn.disabled=true; loginBtn.textContent='Signing in...'; }
+  if(errorEl)  errorEl.style.display='none';
+
+  try {
+    await APIService.login(email, password);
+    hideLoginModal();
+    // Log to audit
+    try { APIService.logAuditEntry({action:'login',field:'session',newValue:'authenticated'}); } catch(e){}
+  } catch(err) {
+    if(errorEl) { errorEl.textContent='⚠️ ' + (err.message||'Login failed. Check your credentials.'); errorEl.style.display='block'; }
+  } finally {
+    if(loginBtn) { loginBtn.disabled=false; loginBtn.textContent='Sign In'; }
+  }
+}
+
+async function handleLogout() {
+  await APIService.logout();
+  const userEl   = document.getElementById('topbar-user');
+  const logoutEl = document.getElementById('logout-btn');
+  if(userEl)   userEl.style.display='none';
+  if(logoutEl) logoutEl.style.display='none';
+  showLoginModal();
+}
+
+// ── Wire up on DOM ready ─────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  const loginBtn  = document.getElementById('login-btn');
+  const loginPass = document.getElementById('login-password');
+  if(loginBtn)  loginBtn.addEventListener('click', doLogin);
+  if(loginPass) loginPass.addEventListener('keypress', e => { if(e.key==='Enter') doLogin(); });
+
+  // Auth gate: if already logged in, hide modal and show user
+  if(TokenManager.isAuthenticated()) {
+    hideLoginModal();
+  } else {
+    showLoginModal();
+  }
+});
+
+
 </script>
 </body>
 </html>
