@@ -132,11 +132,13 @@
 
       // Page numbers
       var pageCount = pdf.getNumberOfPages();
+      // Footer is placed 6mm from the bottom edge, ensuring text is within the printable area.
+      var footerY = pageH - 6;
       for (var i = 1; i <= pageCount; i++) {
         pdf.setPage(i);
         pdf.setFontSize(8);
         pdf.setTextColor(150, 150, 150);
-        pdf.text('Page ' + i + ' of ' + pageCount + '   |   Irish Tax Consulting — Confidential', 10, pageH - 4);
+        pdf.text('Page ' + i + ' of ' + pageCount + '   |   Irish Tax Consulting \u2014 Confidential', 10, footerY);
       }
 
       pdf.save(fn);

@@ -268,14 +268,20 @@
     var medCard = medCardEl ? medCardEl.checked : false;
 
     // ── Income ────────────────────────────────────────────────────────────────
-    // Employment: sum all emp_X_gross fields for s1 (and plain emp_gross)
+    // Employment: collect all emp_X_gross fields for s1 (not s2) to avoid double-counting
+    var empIds = new Set();
     var emp = 0;
     document.querySelectorAll('[id$="_emp1_gross"],[id$="_emp2_gross"],[id$="_emp3_gross"]').forEach(function(el) {
-      if (!el.id.startsWith('s2_')) emp += num(el.value);
+      if (!el.id.startsWith('s2_') && !empIds.has(el.id)) {
+        empIds.add(el.id);
+        emp += num(el.value);
+      }
     });
-    emp += num(val('emp_gross')) + num(val('s1_emp1_gross'));
-    // Deduplicate if both s1_emp1_gross and emp_gross refer to same field
-    if (document.getElementById('s1_emp1_gross') === document.getElementById('emp_gross')) emp = num(val('emp_gross'));
+    // Also pick up the plain emp_gross field (legacy single-column layout) if not already counted
+    var plainEmpEl = document.getElementById('emp_gross');
+    if (plainEmpEl && !empIds.has(plainEmpEl.id)) {
+      emp += num(plainEmpEl.value);
+    }
 
     var bik       = num(val('s1_emp1_bik'))  + num(val('emp_bik'));
     var dsp       = num(val('s1_dsp'))       + num(val('dsp'));

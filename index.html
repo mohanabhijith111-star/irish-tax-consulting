@@ -10255,19 +10255,32 @@ document.addEventListener('DOMContentLoaded', function() {
           var rsr = new ResultSummaryRenderer({ container: sumEl });
           var lr2 = window._lastResult;
           if (lr2 && lr2.totalLiability != null) {
-            // Build a minimal computation object from _lastResult for the renderer
-            var bal     = lr2.balance || 0;
-            var isRef   = bal >= 0; // existing code: positive balance = refund
+            // Build a minimal computation object from _lastResult for the renderer.
+            //
+            // _lastResult.balance convention (existing app):
+            //   balance = totalPaid - netLiability
+            //   Positive balance → overpaid → REFUND DUE
+            //   Negative balance → underpaid → TAX PAYABLE
+            //
+            // ResultSummaryRenderer.overallBalance convention:
+            //   overallBalance < 0 → REFUND DUE
+            //   overallBalance >= 0 → TAX PAYABLE
+            //
+            // Conversion: if _lastResult.balance > 0 (refund), set overallBalance to
+            // a negative value so ResultSummaryRenderer displays "Refund Due".
+            var bal   = lr2.balance || 0;
+            var isRef = bal > 0;  // _lastResult: positive = refund (totalPaid > netLiability)
             var simComp = {
               summary: {
-                grossIT:           lr2.itGross    || 0,
-                totalUSC:          lr2.totalUSC   || 0,
-                totalPRSI:         lr2.totalPRSI  || 0,
-                cgtLiability:      lr2.cgtPayable || 0,
-                lessNRCredits:     lr2.nrCredits  || 0,
-                lessRefCredits:    lr2.refCredits || 0,
-                overallBalance:    isRef ? -Math.abs(bal) : Math.abs(bal),
-                isRefund:          isRef,
+                grossIT:        lr2.itGross    || 0,
+                totalUSC:       lr2.totalUSC   || 0,
+                totalPRSI:      lr2.totalPRSI  || 0,
+                cgtLiability:   lr2.cgtPayable || 0,
+                lessNRCredits:  lr2.nrCredits  || 0,
+                lessRefCredits: lr2.refCredits || 0,
+                // Convert to RSR convention: negative = refund, positive = payable
+                overallBalance: isRef ? -Math.abs(bal) : Math.abs(bal),
+                isRefund:       isRef,
                 taxPaid: {
                   incomeTax: lr2.paidIT   || 0,
                   usc:       lr2.paidUSC  || 0,

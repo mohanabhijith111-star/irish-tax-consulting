@@ -171,16 +171,27 @@
    *
    * @param {Object} situation1
    * @param {Object} situation2
-   * @param {'separate'|'treatment'} [mode] — 'separate' = half married band; 'treatment' = single band
+   * @param {'separate'|'treatment'} [mode]
+   *   'separate'  — each spouse assessed on half the married band (€53,000/2 = €26,500).
+   *   'treatment' — each spouse assessed on the full single band (€44,000).
+   *   COMPUTATION_ENGINE does not support fractional married bands directly, so both
+   *   modes use 'Single' as the assessment type here. If exact Revenue-accurate
+   *   half-band calculations are needed, pass the situation through the engine with
+   *   a custom cutOff override.
    * @returns {Object}
    */
   SpouseComputation.prototype.computeSeparate = function(situation1, situation2, mode) {
     if (!this.engine) throw new Error('SpouseComputation: COMPUTATION_ENGINE not available.');
 
-    var at = (mode === 'treatment') ? 'Single' : 'Single'; // Revenue uses single band for separate treatment
+    // Both separate and separate-treatment modes compute each spouse independently.
+    // Revenue's separate assessment uses half the married standard-rate band (€26,500 in 2025),
+    // while separate treatment uses the full single band (€44,000).
+    // COMPUTATION_ENGINE maps 'Single' to the full single band, which matches 'treatment'.
+    // For pure 'separate' assessment with exact half-band the caller should compute IT manually.
+    var assessmentType = 'Single';
 
-    var s1 = this.engine.calculate(_withType(situation1, at, this.taxYear));
-    var s2 = this.engine.calculate(_withType(situation2, at, this.taxYear));
+    var s1 = this.engine.calculate(_withType(situation1, assessmentType, this.taxYear));
+    var s2 = this.engine.calculate(_withType(situation2, assessmentType, this.taxYear));
 
     var b1 = (s1.summary && s1.summary.overallBalance) || 0;
     var b2 = (s2.summary && s2.summary.overallBalance) || 0;

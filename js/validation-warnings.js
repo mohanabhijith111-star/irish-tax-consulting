@@ -8,11 +8,29 @@
   'use strict';
 
   // ── Thresholds ─────────────────────────────────────────────────────────────
-  var FORM12_RENTAL_LIMIT       = 5000;
+  // Default thresholds (used when RATES_CONFIG is not loaded)
+  var FORM12_RENTAL_LIMIT       = 5000;   // Form 12 rental income ceiling — configurable via RATES_CONFIG
   var MORTGAGE_INTEREST_CAP_STD = 1250;   // single
   var MORTGAGE_INTEREST_CAP_MRD = 2500;   // married
   var RENT_CREDIT_SINGLE_MAX    = 1000;
   var RENT_CREDIT_MARRIED_MAX   = 2000;
+
+  /**
+   * Read a threshold from RATES_CONFIG if available, otherwise use the supplied default.
+   * This makes limits configurable and multi-year-aware via RATES_CONFIG.
+   *
+   * @param {string} key       — optional future key (e.g. 'form12RentalLimit')
+   * @param {number} fallback  — default value when config not available
+   * @returns {number}
+   */
+  function _threshold(key, fallback) {
+    var rc = (typeof RATES_CONFIG !== 'undefined' && RATES_CONFIG);
+    if (rc && typeof rc.getThreshold === 'function') {
+      var v = rc.getThreshold(key);
+      if (v != null && !isNaN(v)) return v;
+    }
+    return fallback;
+  }
 
   /**
    * ValidationWarnings
@@ -52,11 +70,12 @@
 
   // ── Specific checkers ────────────────────────────────────────────────────────
 
-  /** Check Form 12 rental limit (€5,000) */
+  /** Check Form 12 rental limit (€5,000 by default, configurable via RATES_CONFIG) */
   ValidationWarnings.prototype.checkRentalLimit = function(rentalIncome, formType) {
-    if (formType === 'f12' && rentalIncome > FORM12_RENTAL_LIMIT) {
+    var limit = _threshold('form12RentalLimit', FORM12_RENTAL_LIMIT);
+    if (formType === 'f12' && rentalIncome > limit) {
       this.add('error',
-        'Form 12 restricted: Rental income (\u20AC' + _fmt(rentalIncome) + ') exceeds the \u20AC5,000 limit. A Form 11 is required.',
+        'Form 12 restricted: Rental income (\u20AC' + _fmt(rentalIncome) + ') exceeds the \u20AC' + _fmt(limit) + ' limit. A Form 11 is required.',
         'rental');
     }
     return this;
