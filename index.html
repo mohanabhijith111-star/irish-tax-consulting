@@ -9146,15 +9146,39 @@ function renderJointResult(d) {
   if(rightCol) rightCol.style.display = '';
   const liveProforma = document.getElementById('live-proforma');
   if(liveProforma) {
+    const ft  = resolvedFormType();
     const s1n = v('clientName') || 'Spouse 1';
     const s2n = v('s2_name') || 'Spouse 2';
-    const yr  = currentYear;
-    const ft  = resolvedFormType();
-    liveProforma.innerHTML = `<div id="resultsArea">${rows}</div>`;
+    liveProforma.innerHTML = `
+    <div class="result-panel">
+      <div class="result-panel-hdr">
+        <span>Tax Computation — ${currentYear} · ${s1n}</span>
+        <span style="font-size:11px;opacity:0.8">Joint Assessment — Assessable: ${assessableSpouse==='s1'?s1n:s2n}</span>
+      </div>
+      <div class="proforma-ft-banner ${ft}">
+        <span>${ft==='f11'?'Form 11 — Self-Assessment (ROS)':'Form 12 — PAYE (myAccount)'}</span>
+      </div>
+      <div style="padding:16px">
+        <div class="pf-wrap">
+          <table class="pf-table">
+            <thead><tr style="background:#eef2f8;border-bottom:2px solid #1c3557">
+              <th style="width:55%;padding:6px 10px;text-align:left;font-size:11px;font-weight:700;color:#1c3557;text-transform:uppercase">Description</th>
+              <th style="width:15%;padding:6px 10px;text-align:right;font-size:11px;font-weight:700;color:#1c3557;text-transform:uppercase">${s1n}</th>
+              <th style="width:15%;padding:6px 10px;text-align:right;font-size:11px;font-weight:700;color:#1c3557;text-transform:uppercase">${s2n}</th>
+              <th style="width:15%;padding:6px 10px;text-align:right;font-size:11px;font-weight:700;color:#1c3557;text-transform:uppercase">Amount (€)</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+    // Hide placeholder
+    const ph = document.getElementById('proformaPlaceholder');
+    if(ph) ph.style.display = 'none';
+    const sub = document.getElementById('proformaSubtitle');
+    if(sub) sub.textContent = `Joint Assessment — Tax Year ${currentYear}`;
+    liveProforma.scrollIntoView({behavior:'smooth', block:'start'});
   }
-  // Scroll to results
-  const scrollTarget = document.getElementById('live-proforma');
-  if(scrollTarget) scrollTarget.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 // ── renderSeparateResult ─────────────────────────────────────────────────
