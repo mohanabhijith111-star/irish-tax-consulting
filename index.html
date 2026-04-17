@@ -9104,6 +9104,25 @@ function renderJointResult(d) {
       netLiability, totalLiability, totalPaid, balance, priorRefund,
     }
   };
+
+  // ── Write proforma HTML to DOM ───────────────────────────────────────────
+  const ph = document.getElementById('proformaPlaceholder');
+  if(ph) ph.style.display = 'none';
+  const sub = document.getElementById('proformaSubtitle');
+  if(sub) sub.textContent = `Joint Assessment — Tax Year ${currentYear}`;
+  const rightCol = document.getElementById('personalRight');
+  if(rightCol) rightCol.style.display = '';
+  const liveProforma = document.getElementById('live-proforma');
+  if(liveProforma) {
+    const s1n = v('clientName') || 'Spouse 1';
+    const s2n = v('s2_name') || 'Spouse 2';
+    const yr  = currentYear;
+    const ft  = resolvedFormType();
+    liveProforma.innerHTML = `<div id="resultsArea">${rows}</div>`;
+  }
+  // Scroll to results
+  const scrollTarget = document.getElementById('live-proforma');
+  if(scrollTarget) scrollTarget.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 // ── renderSeparateResult ─────────────────────────────────────────────────
@@ -10328,14 +10347,26 @@ document.addEventListener('DOMContentLoaded', function() {
   var spouseToggle = document.getElementById('spouse-mode-toggle');
   document.querySelectorAll('[name="assessMode"]').forEach(function(radio) {
     radio.addEventListener('change', function() {
-      if (spouseToggle) spouseToggle.checked = (radio.value !== 'single');
+      var isSpouse = (radio.value !== 'single');
+      if (spouseToggle) spouseToggle.checked = isSpouse;
+      try { localStorage.setItem('itc_spouseMode', isSpouse ? '1' : '0'); } catch(e) { console.warn('ITC: could not save spouse mode to localStorage', e); }
     });
   });
   if (spouseToggle) {
     spouseToggle.addEventListener('change', function(e) {
       if (binding) binding.toggleSpouseMode(e.target.checked);
+      try { localStorage.setItem('itc_spouseMode', e.target.checked ? '1' : '0'); } catch(e) { console.warn('ITC: could not save spouse mode to localStorage', e); }
     });
   }
+
+  // Restore spouse mode from localStorage
+  try {
+    if (localStorage.getItem('itc_spouseMode') === '1') {
+      var savedModeRadio = document.querySelector('[name="assessMode"][value="joint"]')
+                        || document.querySelector('[name="assessMode"]:not([value="single"])');
+      if (savedModeRadio) savedModeRadio.click();
+    }
+  } catch(e) { console.warn('ITC: could not restore spouse mode from localStorage', e); }
 
   // ── Phase 2.3: PDF export button ────────────────────────────────────────────
   // The export-pdf-btn has onclick="downloadPDF()" as a reliable fallback.
@@ -10366,7 +10397,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  console.log('ITC Phase 2.2–2.4: modules initialised.');
+  console.log('✅ ITC Phase 2 Initialization Complete');
 });
 </script>
 </body>
