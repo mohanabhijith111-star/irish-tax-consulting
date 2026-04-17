@@ -3198,6 +3198,11 @@ function onYearChange() {
     refreshCreditGroups(pfx);
     const el = document.getElementById(`cd-credits-list-${pfx}`);
     if(el) el.innerHTML = renderCreditList(pfx);
+    // Auto-fill credit input boxes with new year amounts
+    creditStore[pfx].forEach(c => {
+      const inputEl = document.getElementById(`credit-amt-${pfx}-${c.id}`);
+      if(inputEl && !c.custom) inputEl.value = c.amount;
+    });
     checkCreditFloor(pfx);
   });
   // Rebuild the credit picker dropdown so it shows new year amounts
@@ -3843,7 +3848,7 @@ const CREDIT_CATALOGUE = [
 // Deductions catalogue (reduce taxable income — relief at marginal rate)
 const DEDUCTION_CATALOGUE = [
   { id:'wfh',           label:'Work From Home Allowance',
-    note:'€3.20/day remote working relief (Revenue daily rate)',
+    note:'Method A: €3.20/day Revenue flat rate. Method B: % of actual utility costs (broadband, heat, electricity). Relief applied at marginal rate.',
     amounts:{2022:3.20,2023:3.20,2024:3.20,2025:3.20,2026:3.20}, perDay:true },
   { id:'flatrate',      label:'Flat-Rate Employment Expenses',
     note:'Agreed schedule for specific occupations (nurses, teachers, etc.) — Revenue approved rates',
@@ -7625,28 +7630,31 @@ function buildCalcHTML(pfx, storeId, baseId) {
   const apply = `<div style="overflow:hidden;margin-top:8px"><button class="calc-apply-btn" id="calc-apply-${pfx}-${storeId}" onclick="applyCalcResult('${pfx}','${storeId}')" disabled>✔ Apply to Return</button></div>`;
 
   // ── WFH ─────────────────────────────────────────────────────────────────
-  if(baseId === 'wfh') return h('Remote Working Relief Calculator', `
-    ${note('Revenue formula: (Utilities × WFH days ÷ ' + daysInYear + ' − Employer contribution) × 30%. Or flat rate: €3.20 × WFH days. Tool shows both — apply whichever is higher.')}
-    <div class="calc-grid">
-      ${field('Annual Electricity & Gas (€)', `cw-${pfx}-${storeId}-elec`, 'euro')}
-      ${field('Annual Broadband (€)', `cw-${pfx}-${storeId}-bb`, 'euro')}
-      ${field('WFH Days in ' + yr, `cw-${pfx}-${storeId}-days`)}
-      ${field('Employer WFH Allowance Paid (€)', `cw-${pfx}-${storeId}-emp`, 'euro')}
-      ${sel('Marginal Tax Rate', `cw-${pfx}-${storeId}-rate`, [{v:'0.40',l:'40% — Higher Rate'},{v:'0.20',l:'20% — Standard Rate'}])}
+  if(baseId === 'wfh') return h('Work From Home Allowance Calculator', `
+    ${note('Select your calculation method. The deduction amount will be added to your return — click <strong>▶ Run Computation</strong> after applying to see the updated tax.')}
+    <div class="calc-grid" style="grid-template-columns:1fr 1fr;margin-bottom:10px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px;border-radius:4px;border:2px solid var(--border);background:var(--surface2)">
+        <input type="radio" name="wfh-method-${pfx}-${storeId}" value="flat" checked
+          onchange="runCalc('${pfx}','${storeId}','${baseId}')"/>
+        <span><strong>Method A — Flat Rate</strong><br><span style="font-size:10px;color:var(--text3)">€3.20 per WFH day (Revenue rate)</span></span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px;border-radius:4px;border:2px solid var(--border);background:var(--surface2)">
+        <input type="radio" name="wfh-method-${pfx}-${storeId}" value="actual"
+          onchange="runCalc('${pfx}','${storeId}','${baseId}')"/>
+        <span><strong>Method B — Actual Cost</strong><br><span style="font-size:10px;color:var(--text3)">30% of utility bills × WFH proportion</span></span>
+      </label>
     </div>
-    <div class="calc-comparison" id="cw-comp-${pfx}-${storeId}">
-      <div class="calc-comparison-card" id="cw-flat-${pfx}-${storeId}">
-        <div class="calc-comparison-card-label">Flat Rate</div>
-        <div class="calc-comparison-card-val">—</div>
-        <div class="calc-comparison-card-sub">€3.20 × days</div>
-      </div>
-      <div class="calc-comparison-card" id="cw-actual-${pfx}-${storeId}">
-        <div class="calc-comparison-card-label">Actual Cost Method</div>
-        <div class="calc-comparison-card-val">—</div>
-        <div class="calc-comparison-card-sub">30% of utilities × days÷${daysInYear}</div>
-      </div>
+    <div id="wfh-flat-inputs-${pfx}-${storeId}" class="calc-grid">
+      ${field('WFH Days in ' + yr, 'cw-' + pfx + '-' + storeId + '-days')}
+    </div>
+    <div id="wfh-actual-inputs-${pfx}-${storeId}" class="calc-grid" style="display:none">
+      ${field('Annual Electricity & Gas (€)', 'cw-' + pfx + '-' + storeId + '-elec', 'euro')}
+      ${field('Annual Broadband (€)', 'cw-' + pfx + '-' + storeId + '-bb', 'euro')}
+      ${field('WFH Days in ' + yr, 'cw-' + pfx + '-' + storeId + '-days2')}
+      ${field('Employer WFH Contribution (€)', 'cw-' + pfx + '-' + storeId + '-emp', 'euro')}
     </div>
     ${result}${apply}`);
+
 
   // ── FLAT RATE ────────────────────────────────────────────────────────────
   if(baseId === 'flatrate') return h('Flat-Rate Employment Expenses', `
@@ -7869,24 +7877,30 @@ function runCalc(pfx, storeId, baseId) {
 
   // WFH
   if(baseId === 'wfh') {
-    const elec = g(`cw-${pfx}-${storeId}-elec`);
-    const bb   = g(`cw-${pfx}-${storeId}-bb`);
-    const days = g(`cw-${pfx}-${storeId}-days`);
-    const emp  = g(`cw-${pfx}-${storeId}-emp`);
-    const rate = parseFloat(gs(`cw-${pfx}-${storeId}-rate`))||0.20;
-    const totalUtils = elec + bb;
-    const flatAmt  = Math.round(days * 3.20);
-    const actualAmt = Math.max(0, Math.round(((totalUtils * days / daysInYear) - emp) * 0.30));
-    const flatEl   = document.getElementById(`cw-flat-${pfx}-${storeId}`);
-    const actualEl = document.getElementById(`cw-actual-${pfx}-${storeId}`);
-    if(flatEl)   { flatEl.querySelector('.calc-comparison-card-val').textContent   = `€${flatAmt.toLocaleString()}`; flatEl.classList.toggle('best', flatAmt >= actualAmt); }
-    if(actualEl) { actualEl.querySelector('.calc-comparison-card-val').textContent = `€${actualAmt.toLocaleString()}`; actualEl.classList.toggle('best', actualAmt > flatAmt); }
-    amount = Math.max(flatAmt, actualAmt);
-    const method = flatAmt >= actualAmt ? 'flat rate (€3.20/day)' : 'actual cost method';
-    const relief = Math.round(amount * rate);
-    sub = `${days} days × method: ${method} → deduction €${amount.toLocaleString()} → tax relief €${relief.toLocaleString()} @ ${(rate*100).toFixed(0)}%`;
-  }
+    // Determine which method user selected
+    const methodRadio = document.querySelector(`input[name="wfh-method-${pfx}-${storeId}"]:checked`);
+    const method = methodRadio ? methodRadio.value : 'flat';
 
+    // Show/hide relevant input panels
+    const flatPanel   = document.getElementById(`wfh-flat-inputs-${pfx}-${storeId}`);
+    const actualPanel = document.getElementById(`wfh-actual-inputs-${pfx}-${storeId}`);
+    if(flatPanel)   flatPanel.style.display   = method === 'flat'   ? '' : 'none';
+    if(actualPanel) actualPanel.style.display  = method === 'actual' ? '' : 'none';
+
+    if(method === 'flat') {
+      const days = g(`cw-${pfx}-${storeId}-days`);
+      amount = Math.round(days * 3.20);
+      sub = `${days} WFH days × €3.20 = deduction of €${amount.toLocaleString()}. Click Apply, then Run Computation to see tax saving.`;
+    } else {
+      const elec = g(`cw-${pfx}-${storeId}-elec`);
+      const bb   = g(`cw-${pfx}-${storeId}-bb`);
+      const days = g(`cw-${pfx}-${storeId}-days2`);
+      const emp  = g(`cw-${pfx}-${storeId}-emp`);
+      const totalUtils = elec + bb;
+      amount = Math.max(0, Math.round(((totalUtils * days / daysInYear) - emp) * 0.30));
+      sub = `(€${totalUtils.toLocaleString()} utilities × ${days} days ÷ ${daysInYear} − €${emp.toLocaleString()} employer) × 30% = deduction of €${amount.toLocaleString()}. Click Apply, then Run Computation.`;
+    }
+  }
   // FLAT RATE
   else if(baseId === 'flatrate') {
     const idx = parseInt(gs(`fr-occ-${pfx}-${storeId}`));
@@ -8085,6 +8099,7 @@ function calculate() {
   applyFormTypeUI(); // update auto-detection before rendering
   const yr = currentYear;
 
+  window._computationJustRan = true; // block live-binding overwrite
   if(assessMode==='single') {
     computeSingle();
   } else if(assessMode==='joint') {
@@ -8092,6 +8107,7 @@ function calculate() {
   } else {
     computeSeparate();
   }
+  setTimeout(() => { window._computationJustRan = false; }, 2000); // re-enable after 2s
 
   // Show "Edit Form" shortcut
   const editBtn = document.getElementById('btnEditForm');
