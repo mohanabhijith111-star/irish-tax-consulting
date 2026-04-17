@@ -1765,8 +1765,7 @@ input,select,button,textarea{font-family:inherit}
         </div>
 
         <!-- Results render here -->
-        <div id="live-proforma">
-        <div id="live-proforma-binding" style="display:none"></div></div>
+        <div id="live-proforma"></div>
 
         <!-- Result summary (Phase 2.2) — effective rate + balance -->
         <div id="result-summary" aria-live="polite"></div>
@@ -10231,7 +10230,7 @@ document.addEventListener('DOMContentLoaded', function() {
       computationEngine:         typeof COMPUTATION_ENGINE !== 'undefined' ? COMPUTATION_ENGINE : null,
       proformaBuilder:           typeof PROFORMA_BUILDER   !== 'undefined' ? PROFORMA_BUILDER   : null,
       ratesConfig:               typeof RATES_CONFIG       !== 'undefined' ? RATES_CONFIG       : null,
-      containerSelector:         '#live-proforma-binding',
+      containerSelector:         '#live-proforma',
       warningContainerSelector:  '#validation-warnings',
       resultSummarySelector:     '#result-summary',
       debounceMs:                300,
@@ -10353,7 +10352,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var spouseUIBinding = null;
   if (typeof SpouseUIBinding !== 'undefined') {
     spouseUIBinding = new SpouseUIBinding({
-      containerSelector:     '#live-proforma-binding',
+      containerSelector:     '#live-proforma',
       resultSummarySelector: '#result-summary',
     });
     spouseUIBinding.bindAssessmentModeRadios();
